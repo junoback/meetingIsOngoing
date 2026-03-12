@@ -58,9 +58,50 @@ fi
 echo ""
 
 # ============================================================================
-# 4. 建立虛擬環境
+# 4. 偵測系統環境
 # ============================================================================
-echo "【4/7】建立 Python 虛擬環境..."
+echo "【4/8】偵測系統環境..."
+
+# 取得 macOS 版本
+OS_VERSION=$(sw_vers -productVersion)
+OS_MAJOR=$(echo $OS_VERSION | cut -d. -f1)
+OS_MINOR=$(echo $OS_VERSION | cut -d. -f2)
+
+# 取得處理器架構
+ARCH=$(uname -m)
+
+# 取得 Python 版本
+PYTHON_VERSION=$(python3 --version | cut -d ' ' -f 2)
+PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+
+echo "  macOS 版本：$OS_VERSION"
+echo "  處理器架構：$ARCH"
+echo "  Python 版本：$PYTHON_VERSION"
+echo ""
+
+# 決定安裝策略
+INSTALL_STRATEGY="standard"
+
+# Python 3.13+ 需要特殊處理
+if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 13 ]; then
+    echo "⚠️  偵測到 Python 3.13+，將使用兼容性安裝策略"
+    INSTALL_STRATEGY="python313"
+fi
+
+# macOS 10.15 (Catalina) 需要特殊處理
+if [ "$OS_MAJOR" -eq 10 ] && [ "$OS_MINOR" -eq 15 ]; then
+    echo "⚠️  偵測到 macOS 10.15 (Catalina)，將使用兼容性安裝策略"
+    INSTALL_STRATEGY="catalina"
+fi
+
+echo "✅ 安裝策略：$INSTALL_STRATEGY"
+echo ""
+
+# ============================================================================
+# 5. 建立虛擬環境
+# ============================================================================
+echo "【5/8】建立 Python 虛擬環境..."
 if [ ! -d ".venv" ]; then
     echo "正在建立虛擬環境..."
     python3 -m venv .venv
@@ -71,26 +112,68 @@ fi
 echo ""
 
 # ============================================================================
-# 5. 升級 pip
+# 6. 升級 pip
 # ============================================================================
-echo "【5/7】升級 pip..."
-.venv/bin/pip install --upgrade pip
+echo "【6/8】升級 pip 和建置工具..."
+.venv/bin/pip install --upgrade pip setuptools wheel
 echo "✅ pip 已升級"
 echo ""
 
 # ============================================================================
-# 6. 安裝依賴套件
+# 7. 安裝依賴套件（根據系統環境自動適配）
 # ============================================================================
-echo "【6/7】安裝 Python 依賴套件..."
+echo "【7/8】安裝 Python 依賴套件..."
 echo "這可能需要幾分鐘，請稍候..."
-.venv/bin/pip install -r requirements.txt
-echo "✅ 依賴套件已安裝"
+echo ""
+
+case $INSTALL_STRATEGY in
+    "python313")
+        echo "📦 使用 Python 3.13 兼容性安裝策略..."
+        echo ""
+
+        # Python 3.13 需要先安裝兼容的 pyarrow
+        echo "  步驟 1/3：安裝 setuptools (Python 3.13 需要)..."
+        .venv/bin/pip install setuptools
+
+        echo "  步驟 2/3：嘗試安裝 pyarrow 預編譯版本..."
+        # 先嘗試安裝預編譯的 pyarrow
+        if .venv/bin/pip install pyarrow --only-binary :all: 2>/dev/null; then
+            echo "  ✅ pyarrow 預編譯版本安裝成功"
+        else
+            echo "  ⚠️  預編譯版本失敗，嘗試安裝較舊的穩定版本..."
+            .venv/bin/pip install "pyarrow<15.0.0" || echo "  ⚠️  pyarrow 安裝失敗，將繼續安裝其他套件"
+        fi
+
+        echo "  步驟 3/3：安裝其他依賴套件..."
+        .venv/bin/pip install -r requirements.txt
+        ;;
+
+    "catalina")
+        echo "📦 使用 macOS 10.15 (Catalina) 兼容性安裝策略..."
+        echo ""
+
+        # Catalina 使用較舊但穩定的版本
+        echo "  步驟 1/2：安裝兼容版本的 pyarrow..."
+        .venv/bin/pip install "pyarrow>=10.0.0,<15.0.0" || echo "  ⚠️  pyarrow 安裝失敗，將繼續"
+
+        echo "  步驟 2/2：安裝其他依賴套件..."
+        .venv/bin/pip install -r requirements.txt
+        ;;
+
+    *)
+        echo "📦 使用標準安裝策略..."
+        .venv/bin/pip install -r requirements.txt
+        ;;
+esac
+
+echo ""
+echo "✅ 依賴套件安裝完成"
 echo ""
 
 # ============================================================================
-# 7. 建立必要目錄
+# 8. 建立必要目錄
 # ============================================================================
-echo "【7/7】建立必要目錄..."
+echo "【8/8】建立必要目錄..."
 mkdir -p recordings
 mkdir -p transcripts
 echo "✅ 目錄已建立"
