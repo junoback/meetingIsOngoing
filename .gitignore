@@ -1,0 +1,36 @@
+# Python 虛擬環境
+.venv/
+venv/
+env/
+
+# Python 快取
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 錄音檔案
+recordings/*.wav
+recordings/*.mp3
+
+# 逐字稿檔案
+transcripts/*.txt
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日誌
+*.log
+
+# 暫存檔
+*.tmp
+.cache/
