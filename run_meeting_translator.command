@@ -12,13 +12,45 @@ echo "======================================"
 echo ""
 
 # ============================================================================
+# 函數定義
+# ============================================================================
+
+# 尋找相容的 Python 版本（3.9 - 3.12）
+find_compatible_python() {
+    for candidate in python3.12 python3.11 python3.10 python3.9 python3; do
+        if command -v "$candidate" > /dev/null 2>&1; then
+            local version
+            version=$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+            case "$version" in
+                3.9|3.10|3.11|3.12)
+                    PYTHON_CMD="$candidate"
+                    return 0
+                    ;;
+            esac
+        fi
+    done
+    return 1
+}
+
+# 準備編譯環境（設定 portaudio 路徑）
+prepare_build_env() {
+    if command -v brew &> /dev/null && brew list portaudio &> /dev/null; then
+        PORTAUDIO_PREFIX=$(brew --prefix portaudio)
+        export CFLAGS="-I${PORTAUDIO_PREFIX}/include ${CFLAGS:-}"
+        export LDFLAGS="-L${PORTAUDIO_PREFIX}/lib ${LDFLAGS:-}"
+        export PKG_CONFIG_PATH="${PORTAUDIO_PREFIX}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    fi
+}
+
+# ============================================================================
 # 檢查 Python 3
 # ============================================================================
-if ! command -v python3 &> /dev/null; then
-    echo "❌ 錯誤：找不到 python3"
+PYTHON_CMD=""
+if ! find_compatible_python; then
+    echo "❌ 錯誤：找不到相容的 Python（需要 3.9 - 3.12）"
     echo ""
-    echo "請先安裝 Python 3："
-    echo "  brew install python@3.9"
+    echo "請先安裝 Python："
+    echo "  brew install python@3.12"
     echo ""
     read -p "按 Enter 關閉..."
     exit 1
@@ -31,30 +63,6 @@ if [ ! -d ".venv" ]; then
     echo "【首次啟動】正在建立虛擬環境..."
     echo ""
 
-    # 偵測系統環境
-    echo "偵測系統環境..."
-    PYTHON_VERSION=$(python3 --version | cut -d ' ' -f 2)
-    PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-    PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-    OS_VERSION=$(sw_vers -productVersion)
-    OS_MAJOR=$(echo $OS_VERSION | cut -d. -f1)
-    OS_MINOR=$(echo $OS_VERSION | cut -d. -f2)
-
-    echo "  Python 版本：$PYTHON_VERSION"
-    echo "  macOS 版本：$OS_VERSION"
-    echo ""
-
-    # 決定安裝策略
-    INSTALL_STRATEGY="standard"
-    if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 13 ]; then
-        INSTALL_STRATEGY="python313"
-        echo "⚠️  偵測到 Python 3.13+，將使用兼容性安裝"
-    elif [ "$OS_MAJOR" -eq 10 ] && [ "$OS_MINOR" -eq 15 ]; then
-        INSTALL_STRATEGY="catalina"
-        echo "⚠️  偵測到 macOS 10.15，將使用兼容性安裝"
-    fi
-    echo ""
-
     # 檢查 portaudio
     if ! brew list portaudio &> /dev/null 2>&1; then
         echo "正在安裝 portaudio（sounddevice 需要）..."
@@ -62,34 +70,26 @@ if [ ! -d ".venv" ]; then
     fi
 
     # 建立虛擬環境
-    python3 -m venv .venv
+    "$PYTHON_CMD" -m venv .venv
 
-    # 升級 pip
+    # 準備編譯環境
+    prepare_build_env
+
+    # 升級 pip 和建置工具
     echo "正在升級 pip 和建置工具..."
-    .venv/bin/pip install --upgrade pip setuptools wheel
+    .venv/bin/pip install --upgrade setuptools wheel
+    .venv/bin/pip install --upgrade pip
 
-    # 根據策略安裝依賴
+    # 安裝依賴
     echo "正在安裝依賴套件（約需 1-2 分鐘）..."
-    echo ""
-
-    case $INSTALL_STRATEGY in
-        "python313")
-            echo "使用 Python 3.13 兼容性安裝..."
-            .venv/bin/pip install setuptools
-            .venv/bin/pip install pyarrow --only-binary :all: 2>/dev/null || \
-            .venv/bin/pip install "pyarrow<15.0.0" || \
-            echo "⚠️  pyarrow 安裝失敗，將繼續"
-            .venv/bin/pip install -r requirements.txt
-            ;;
-        "catalina")
-            echo "使用 macOS 10.15 兼容性安裝..."
-            .venv/bin/pip install "pyarrow>=10.0.0,<15.0.0" || echo "⚠️  pyarrow 安裝失敗"
-            .venv/bin/pip install -r requirements.txt
-            ;;
-        *)
-            .venv/bin/pip install -r requirements.txt
-            ;;
-    esac
+    if ! .venv/bin/pip install -r requirements.txt; then
+        echo ""
+        echo "❌ 依賴安裝失敗"
+        echo "請執行以下命令查看詳細錯誤："
+        echo "  bash setup.sh"
+        read -p "按 Enter 關閉..."
+        exit 1
+    fi
 
     echo ""
     echo "✅ 虛擬環境建立完成！"
@@ -103,6 +103,7 @@ if [ -f "requirements.txt" ] && [ -f ".venv/pyvenv.cfg" ]; then
     # 檢查 requirements.txt 是否比虛擬環境更新
     if [ "requirements.txt" -nt ".venv/pyvenv.cfg" ]; then
         echo "偵測到套件更新，正在同步..."
+        prepare_build_env
         .venv/bin/pip install -r requirements.txt
         echo "✅ 套件已更新"
         echo ""
