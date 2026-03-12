@@ -17,14 +17,14 @@ echo ""
 # 函數定義
 # ============================================================================
 
-# 尋找相容的 Python 版本（3.9 - 3.13）
+# 尋找相容的 Python 版本（3.9+）
 find_compatible_python() {
-    for candidate in python3.13 python3.12 python3.11 python3.10 python3.9 python3; do
+    for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3.9 python3; do
         if command -v "$candidate" > /dev/null 2>&1; then
             local version
             version=$("$candidate" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
             case "$version" in
-                3.9|3.10|3.11|3.12|3.13)
+                3.9|3.10|3.11|3.12|3.13|3.14)
                     PYTHON_CMD="$candidate"
                     PYTHON_VERSION="$version"
                     return 0
@@ -70,7 +70,7 @@ PYTHON_CMD=""
 PYTHON_VERSION=""
 
 if ! find_compatible_python; then
-    echo "找不到相容的 Python（需要 3.9 - 3.13），正在安裝 Python 3.12..."
+    echo "找不到相容的 Python（需要 3.9+），正在安裝 Python 3.12..."
     brew install python@3.12
 
     if ! find_compatible_python; then
