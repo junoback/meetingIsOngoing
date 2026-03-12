@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 import threading
+import html as html_module
 
 from config_manager import config_manager
 from audio_recorder import AudioRecorder
@@ -1316,13 +1317,14 @@ def main():
                 if mode == "transcribe":
                     # 單語模式
                     original_text = texts.get('original', text)
+                    original_text_escaped = html_module.escape(original_text)
                     card_body += f"""
                     <div style='margin-bottom: 0.75rem;'>
                         <div class='language-label' style='color: var(--color-text-tertiary);'>
                             <span>●</span> ORIGINAL
                         </div>
                         <div style='color: var(--color-text-primary); line-height: 1.7;'>
-                            {original_text}
+                            {original_text_escaped}
                         </div>
                     </div>
                     """
@@ -1333,22 +1335,24 @@ def main():
                     en_text = texts.get('en', text)
 
                     if ja_text:
+                        ja_text_escaped = html_module.escape(ja_text)
                         card_body += f"""
                         <div class='japanese-text' style='margin-bottom: 0.75rem;'>
                             <div class='language-label' style='color: #007aff;'>
                                 <span>●</span> JAPANESE
                             </div>
-                            <div>{ja_text}</div>
+                            <div>{ja_text_escaped}</div>
                         </div>
                         """
 
                     if en_text:
+                        en_text_escaped = html_module.escape(en_text)
                         card_body += f"""
                         <div class='english-text'>
                             <div class='language-label' style='color: #34c759;'>
                                 <span>●</span> ENGLISH
                             </div>
-                            <div>{en_text}</div>
+                            <div>{en_text_escaped}</div>
                         </div>
                         """
 
@@ -1359,32 +1363,35 @@ def main():
                     zh_text = texts.get('zh', text)
 
                     if ja_text:
+                        ja_text_escaped = html_module.escape(ja_text)
                         card_body += f"""
                         <div class='japanese-text' style='margin-bottom: 0.75rem;'>
                             <div class='language-label' style='color: #007aff;'>
                                 <span>●</span> JAPANESE
                             </div>
-                            <div>{ja_text}</div>
+                            <div>{ja_text_escaped}</div>
                         </div>
                         """
 
                     if en_text:
+                        en_text_escaped = html_module.escape(en_text)
                         card_body += f"""
                         <div class='english-text' style='margin-bottom: 0.75rem;'>
                             <div class='language-label' style='color: #34c759;'>
                                 <span>●</span> ENGLISH
                             </div>
-                            <div>{en_text}</div>
+                            <div>{en_text_escaped}</div>
                         </div>
                         """
 
                     if zh_text:
+                        zh_text_escaped = html_module.escape(zh_text)
                         card_body += f"""
                         <div class='chinese-text'>
                             <div class='language-label' style='color: #ff9500;'>
                                 <span>●</span> CHINESE
                             </div>
-                            <div>{zh_text}</div>
+                            <div>{zh_text_escaped}</div>
                         </div>
                         """
 
@@ -1405,6 +1412,9 @@ def main():
                     lang_label = "JAPANESE"
                     lang_color = "#007aff"
 
+                # Escape HTML 特殊字符
+                text_escaped = html_module.escape(text)
+
                 st.markdown(
                     f"""
                     <div class='transcript-card'>
@@ -1416,7 +1426,7 @@ def main():
                             <span>●</span> {lang_label}
                         </div>
                         <div style='color: var(--color-text-primary); line-height: 1.7; margin-top: 0.5rem;'>
-                            {text}
+                            {text_escaped}
                         </div>
                     </div>
                     """,
