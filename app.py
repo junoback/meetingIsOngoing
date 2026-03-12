@@ -17,56 +17,455 @@ from transcriber import Transcriber, TranscriberWorker
 
 # 設定頁面配置
 st.set_page_config(
-    page_title="即時會議翻譯 App",
-    page_icon="🎙️",
+    page_title="Meeting Translator — Real-time AI Translation",
+    page_icon="🎙",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# 自訂 CSS 樣式
+# 企業級 CSS 設計系統
 st.markdown("""
 <style>
-    .japanese-text {
-        background-color: #E3F2FD;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 5px 0;
+    /* ============================================
+       全域設定 - macOS 質感基礎
+       ============================================ */
+
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    :root {
+        /* 配色系統 - macOS Big Sur 風格 */
+        --color-bg-primary: #ffffff;
+        --color-bg-secondary: #f5f5f7;
+        --color-bg-tertiary: #e8e8ed;
+        --color-surface: #ffffff;
+        --color-surface-raised: #ffffff;
+
+        /* 文字色彩 */
+        --color-text-primary: #1d1d1f;
+        --color-text-secondary: #6e6e73;
+        --color-text-tertiary: #86868b;
+
+        /* 品牌色彩 - 專業且克制 */
+        --color-accent-blue: #007aff;
+        --color-accent-green: #34c759;
+        --color-accent-orange: #ff9500;
+        --color-accent-red: #ff3b30;
+
+        /* 語言色彩 - 柔和且易辨識 */
+        --color-lang-ja: #e8f4fd;
+        --color-lang-ja-border: #b3d9f2;
+        --color-lang-en: #e8f8f0;
+        --color-lang-en-border: #b3e6d4;
+        --color-lang-zh: #fff4e8;
+        --color-lang-zh-border: #ffd9a3;
+
+        /* 陰影 - 微妙且有層次 */
+        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+        --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+        --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.16);
+
+        /* 圓角 */
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 20px;
+
+        /* 間距 */
+        --space-xs: 4px;
+        --space-sm: 8px;
+        --space-md: 16px;
+        --space-lg: 24px;
+        --space-xl: 32px;
+        --space-2xl: 48px;
     }
-    .english-text {
-        background-color: #E8F5E9;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 5px 0;
+
+    /* ============================================
+       Streamlit 元素覆寫
+       ============================================ */
+
+    /* 主容器 */
+    .main {
+        background-color: var(--color-bg-secondary);
+        padding: var(--space-xl) var(--space-2xl);
     }
-    .chinese-text {
-        background-color: #FFF3E0;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 5px 0;
+
+    /* 隱藏 Streamlit 品牌元素 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+
+    /* 側邊欄樣式 */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #ffffff 0%, #f9f9fb 100%);
+        border-right: 1px solid rgba(0, 0, 0, 0.06);
+        padding: var(--space-lg) !important;
     }
+
+    [data-testid="stSidebar"] > div:first-child {
+        padding-top: var(--space-xl);
+    }
+
+    /* 標題樣式 */
+    h1 {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-weight: 700;
+        font-size: 2rem;
+        letter-spacing: -0.02em;
+        color: var(--color-text-primary);
+        margin-bottom: var(--space-lg);
+        line-height: 1.2;
+    }
+
+    h2 {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-weight: 600;
+        font-size: 1.25rem;
+        letter-spacing: -0.01em;
+        color: var(--color-text-primary);
+        margin-top: var(--space-xl);
+        margin-bottom: var(--space-md);
+    }
+
+    h3 {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-weight: 600;
+        font-size: 1rem;
+        letter-spacing: -0.005em;
+        color: var(--color-text-secondary);
+        margin-top: var(--space-lg);
+        margin-bottom: var(--space-sm);
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.05em;
+    }
+
+    /* 段落和文字 */
+    p, .stMarkdown {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-weight: 400;
+        font-size: 0.9375rem;
+        line-height: 1.6;
+        color: var(--color-text-secondary);
+    }
+
+    /* ============================================
+       按鈕系統
+       ============================================ */
+
+    .stButton > button {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-weight: 500;
+        font-size: 0.9375rem;
+        border-radius: var(--radius-md);
+        padding: 0.625rem 1.25rem;
+        border: none;
+        background: var(--color-accent-blue);
+        color: white;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        letter-spacing: -0.01em;
+    }
+
+    .stButton > button:hover {
+        background: #0051d5;
+        box-shadow: var(--shadow-md);
+        transform: translateY(-1px);
+    }
+
+    .stButton > button:active {
+        transform: translateY(0);
+        box-shadow: var(--shadow-sm);
+    }
+
+    /* ============================================
+       輸入元素
+       ============================================ */
+
+    .stTextInput > div > div > input,
+    .stSelectbox > div > div > div,
+    .stTextArea > div > div > textarea {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 0.9375rem;
+        border: 1px solid var(--color-bg-tertiary);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        padding: 0.625rem 0.875rem;
+        transition: all 0.2s ease;
+    }
+
+    .stTextInput > div > div > input:focus,
+    .stSelectbox > div > div > div:focus,
+    .stTextArea > div > div > textarea:focus {
+        border-color: var(--color-accent-blue);
+        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+        outline: none;
+    }
+
+    /* Slider 樣式 */
+    .stSlider > div > div > div > div {
+        background-color: var(--color-accent-blue);
+    }
+
+    /* Radio 樣式 */
+    .stRadio > div {
+        gap: var(--space-sm);
+    }
+
+    .stRadio > div > label {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 0.9375rem;
+        background: var(--color-surface);
+        padding: var(--space-sm) var(--space-md);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-bg-tertiary);
+        transition: all 0.2s ease;
+    }
+
+    .stRadio > div > label:hover {
+        border-color: var(--color-accent-blue);
+        background: var(--color-bg-secondary);
+    }
+
+    /* ============================================
+       卡片系統 - 翻譯結果顯示
+       ============================================ */
+
+    .transcript-card {
+        background: var(--color-surface-raised);
+        border-radius: var(--radius-lg);
+        padding: var(--space-lg);
+        margin-bottom: var(--space-md);
+        box-shadow: var(--shadow-sm);
+        border: 1px solid rgba(0, 0, 0, 0.04);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .transcript-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+
+    /* 時間戳記 */
     .timestamp {
-        color: #666;
-        font-size: 0.9em;
-        font-weight: bold;
+        font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--color-text-tertiary);
+        letter-spacing: 0.02em;
+        margin-bottom: var(--space-sm);
+        display: inline-block;
     }
+
+    /* 延遲時間 */
     .latency {
-        color: #999;
-        font-size: 0.8em;
-        font-style: italic;
+        font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+        font-size: 0.6875rem;
+        color: var(--color-text-tertiary);
+        margin-left: var(--space-sm);
+        opacity: 0.7;
     }
+
+    /* 語言標籤 */
+    .language-label {
+        font-size: 0.6875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: var(--space-xs);
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+    }
+
+    /* 日語文字塊 */
+    .japanese-text {
+        background: linear-gradient(135deg, var(--color-lang-ja) 0%, #f0f8ff 100%);
+        border-left: 3px solid var(--color-lang-ja-border);
+        padding: var(--space-md);
+        border-radius: var(--radius-sm);
+        margin: var(--space-sm) 0;
+        font-size: 0.9375rem;
+        line-height: 1.7;
+        color: var(--color-text-primary);
+    }
+
+    /* 英語文字塊 */
+    .english-text {
+        background: linear-gradient(135deg, var(--color-lang-en) 0%, #f0fff8 100%);
+        border-left: 3px solid var(--color-lang-en-border);
+        padding: var(--space-md);
+        border-radius: var(--radius-sm);
+        margin: var(--space-sm) 0;
+        font-size: 0.9375rem;
+        line-height: 1.7;
+        color: var(--color-text-primary);
+    }
+
+    /* 中文文字塊 */
+    .chinese-text {
+        background: linear-gradient(135deg, var(--color-lang-zh) 0%, #fffaf0 100%);
+        border-left: 3px solid var(--color-lang-zh-border);
+        padding: var(--space-md);
+        border-radius: var(--radius-sm);
+        margin: var(--space-sm) 0;
+        font-size: 0.9375rem;
+        line-height: 1.7;
+        color: var(--color-text-primary);
+    }
+
+    /* ============================================
+       狀態指示器
+       ============================================ */
+
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-xs);
+        padding: var(--space-xs) var(--space-md);
+        border-radius: var(--radius-xl);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+    }
+
     .status-recording {
-        color: #ff0000;
-        animation: blink 1s infinite;
+        background: rgba(255, 59, 48, 0.1);
+        color: var(--color-accent-red);
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     }
+
     .status-paused {
-        color: #ff9800;
+        background: rgba(255, 149, 0, 0.1);
+        color: var(--color-accent-orange);
     }
+
     .status-stopped {
-        color: #999;
+        background: rgba(142, 142, 147, 0.1);
+        color: var(--color-text-tertiary);
     }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+
+    /* 錄音指示燈 */
+    .recording-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--color-accent-red);
+        animation: blink 1.5s ease-in-out infinite;
+        display: inline-block;
+    }
+
     @keyframes blink {
-        0%, 50%, 100% { opacity: 1; }
-        25%, 75% { opacity: 0.5; }
+        0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--color-accent-red); }
+        50% { opacity: 0.3; box-shadow: none; }
+    }
+
+    /* ============================================
+       資訊卡片
+       ============================================ */
+
+    .stAlert {
+        background: var(--color-surface);
+        border-radius: var(--radius-md);
+        border: 1px solid var(--color-bg-tertiary);
+        padding: var(--space-md);
+        font-size: 0.875rem;
+    }
+
+    /* Metric 卡片 */
+    [data-testid="stMetricValue"] {
+        font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+    }
+
+    [data-testid="stMetricLabel"] {
+        font-size: 0.8125rem;
+        color: var(--color-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 500;
+    }
+
+    /* ============================================
+       分隔線
+       ============================================ */
+
+    hr {
+        margin: var(--space-xl) 0;
+        border: none;
+        height: 1px;
+        background: linear-gradient(90deg,
+            transparent 0%,
+            var(--color-bg-tertiary) 50%,
+            transparent 100%);
+    }
+
+    /* ============================================
+       容器和佈局
+       ============================================ */
+
+    .block-container {
+        padding-top: var(--space-xl);
+        padding-bottom: var(--space-2xl);
+        max-width: 1400px;
+    }
+
+    /* Expander */
+    .streamlit-expanderHeader {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-weight: 500;
+        font-size: 0.9375rem;
+        background: var(--color-surface);
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-bg-tertiary);
+        padding: var(--space-md);
+    }
+
+    /* ============================================
+       滾動條
+       ============================================ */
+
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: var(--color-bg-tertiary);
+        border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: var(--color-text-tertiary);
+    }
+
+    /* ============================================
+       響應式設計
+       ============================================ */
+
+    @media (max-width: 768px) {
+        .main {
+            padding: var(--space-md);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+        }
+
+        .transcript-card {
+            padding: var(--space-md);
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -519,12 +918,22 @@ def main():
     # 側邊欄
     # ========================================================================
     with st.sidebar:
-        st.title("🎙️ 會議翻譯 App")
-        st.markdown("使用 OpenAI Whisper API 即時翻譯日語會議")
+        # 應用標題
+        st.markdown("""
+        <div style='margin-bottom: 2rem;'>
+            <h1 style='font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: -0.02em;'>
+                Meeting Translator
+            </h1>
+            <p style='font-size: 0.8125rem; color: var(--color-text-secondary); margin: 0.25rem 0 0 0;'>
+                Real-time AI Translation powered by OpenAI
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
         st.divider()
 
         # API Key 輸入
-        st.subheader("OpenAI API Key")
+        st.markdown("<h3>OpenAI API KEY</h3>", unsafe_allow_html=True)
         api_key_input = st.text_input(
             "API Key",
             value=st.session_state.api_key,
@@ -553,7 +962,7 @@ def main():
         st.divider()
 
         # 會議資訊
-        st.subheader("📋 會議資訊")
+        st.markdown("<h3>MEETING INFORMATION</h3>", unsafe_allow_html=True)
 
         # 讀取會議配置
         meeting_config = config_manager.get_meeting_config()
@@ -615,7 +1024,7 @@ def main():
         st.divider()
 
         # 音訊設定
-        st.subheader("音訊設定")
+        st.markdown("<h3>AUDIO SETTINGS</h3>", unsafe_allow_html=True)
 
         # 列出音訊裝置
         devices = AudioRecorder.list_audio_devices()
@@ -664,12 +1073,12 @@ def main():
         st.divider()
 
         # 處理模式
-        st.subheader("處理模式")
+        st.markdown("<h3>TRANSLATION MODE</h3>", unsafe_allow_html=True)
 
         mode_options = {
-            "transcribe": "📝 Transcribe（日語→日語）",
-            "translate": "🌐 Translate（日語→英文）",
-            "translate_zh": "🈯 翻譯（日語→中文）"
+            "transcribe": "Transcribe (Japanese → Japanese)",
+            "translate": "Translate (Japanese → English)",
+            "translate_zh": "Translate (Japanese → Chinese)"
         }
 
         mode = st.radio(
@@ -683,27 +1092,27 @@ def main():
 
         # 語言選擇
         language = st.selectbox(
-            "音訊語言",
+            "Audio Language",
             ["ja", "en", "zh", "ko", "es", "fr", "de"],
             format_func=lambda x: {
-                "ja": "日語", "en": "英語", "zh": "中文",
-                "ko": "韓語", "es": "西班牙語", "fr": "法語", "de": "德語"
+                "ja": "Japanese", "en": "English", "zh": "Chinese",
+                "ko": "Korean", "es": "Spanish", "fr": "French", "de": "German"
             }.get(x, x),
             disabled=st.session_state.is_recording or st.session_state.mode in ["translate", "translate_zh"],
-            help="翻譯模式下此選項無效",
+            help="This option is disabled in translation mode",
             key='language'
         )
 
         st.divider()
 
         # 顯示選項
-        st.subheader("顯示設定")
+        st.markdown("<h3>DISPLAY OPTIONS</h3>", unsafe_allow_html=True)
 
         show_bilingual = st.checkbox(
-            "顯示多語言對照",
+            "Show multilingual comparison",
             value=st.session_state.show_bilingual,
             disabled=st.session_state.is_recording,
-            help="翻譯模式下顯示原文+譯文對照",
+            help="Display original text + translations side by side",
             key='show_bilingual'
         )
 
@@ -711,25 +1120,25 @@ def main():
 
         # 錄音狀態資訊
         if st.session_state.is_recording and st.session_state.recorder:
-            st.subheader("📊 錄音狀態")
+            st.markdown("<h3>RECORDING STATUS</h3>", unsafe_allow_html=True)
             stats = st.session_state.recorder.get_recording_stats()
 
-            st.metric("錄音時長", f"{stats['duration']:.1f} 秒")
-            st.metric("檔案大小", f"{stats['file_size'] / 1024 / 1024:.2f} MB")
-            st.metric("已處理片段", stats['chunks_processed'])
+            st.metric("Duration", f"{stats['duration']:.1f}s")
+            st.metric("File Size", f"{stats['file_size'] / 1024 / 1024:.2f} MB")
+            st.metric("Processed Chunks", stats['chunks_processed'])
 
             if st.session_state.transcriber:
                 api_stats = st.session_state.transcriber.get_stats()
-                st.metric("Whisper API 呼叫次數", api_stats['total_calls'])
+                st.metric("API Calls", api_stats['total_calls'])
                 if api_stats.get('translation_calls', 0) > 0:
-                    st.metric("GPT 翻譯次數", api_stats['translation_calls'])
-                st.metric("API 費用估算", f"${api_stats['estimated_cost']:.4f} USD")
+                    st.metric("Translations", api_stats['translation_calls'])
+                st.metric("Estimated Cost", f"${api_stats['estimated_cost']:.4f}")
 
                 if st.session_state.worker:
                     queue_size = st.session_state.worker.get_queue_size()
-                    worker_status = "✅ 運行中" if st.session_state.worker.is_running else "❌ 已停止"
-                    st.metric("待處理佇列", f"{queue_size} 個片段")
-                    st.metric("Worker 狀態", worker_status)
+                    worker_status = "Running" if st.session_state.worker.is_running else "Stopped"
+                    st.metric("Queue", f"{queue_size} chunks")
+                    st.metric("Worker", worker_status)
 
             st.divider()
 
@@ -739,22 +1148,22 @@ def main():
             error_messages.extend(st.session_state.controller.error_messages)
 
         if error_messages:
-            st.subheader("⚠️ 錯誤訊息")
+            st.markdown("<h3>ERRORS</h3>", unsafe_allow_html=True)
             error_container = st.container()
             with error_container:
                 for error in error_messages[-5:]:  # 只顯示最近 5 條
-                    st.error(error, icon="⚠️")
+                    st.error(error, icon="⚠")
 
         # 調試日誌（可展開）
         if st.session_state.debug_logs:
-            with st.expander("🔍 調試日誌", expanded=False):
+            with st.expander("Debug Logs", expanded=False):
                 for log in st.session_state.debug_logs[-20:]:  # 只顯示最近 20 條
                     st.text(log)
 
         # 術語詞典管理（可展開）
-        with st.expander("📖 術語詞典管理", expanded=False):
-            st.markdown("**管理專有名詞翻譯**")
-            st.info("💡 建議使用 **英文 → 中文** 對照（因為翻譯流程：日語→英文→中文）")
+        with st.expander("Terminology Dictionary", expanded=False):
+            st.markdown("**Manage specialized terms and translations**")
+            st.info("Recommended: Use **English → Chinese** pairs (translation flow: JA→EN→ZH)")
 
             # 顯示現有術語
             terminology = config_manager.get_terminology()
@@ -793,46 +1202,88 @@ def main():
     # 主畫面
     # ========================================================================
 
-    st.title("🎙️ 即時會議翻譯")
+    # 頁首 - 狀態指示器和控制面板
+    header_col1, header_col2 = st.columns([2, 1])
+
+    with header_col1:
+        # 主標題
+        st.markdown("""
+        <div style='margin-bottom: 0.5rem;'>
+            <h1 style='font-size: 2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em;'>
+                Live Transcription
+            </h1>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with header_col2:
+        # 狀態指示器
+        if st.session_state.is_recording:
+            if st.session_state.is_paused:
+                st.markdown("""
+                <div class='status-badge status-paused' style='float: right;'>
+                    <span style='font-size: 0.75rem;'>⏸</span>
+                    <span>Paused</span>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class='status-badge status-recording' style='float: right;'>
+                    <span class='recording-indicator'></span>
+                    <span>Recording</span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class='status-badge status-stopped' style='float: right;'>
+                <span style='font-size: 0.75rem;'>⏹</span>
+                <span>Stopped</span>
+            </div>
+            """, unsafe_allow_html=True)
 
     # 控制按鈕
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
+    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+
+    col1, col2, col3, col_spacer = st.columns([1.2, 1, 1, 4])
 
     with col1:
-        if st.button("🎙️ 開始錄音", disabled=st.session_state.is_recording, use_container_width=True):
+        start_button_type = "secondary" if st.session_state.is_recording else "primary"
+        if st.button(
+            "▶ Start Recording" if not st.session_state.is_recording else "● Recording...",
+            disabled=st.session_state.is_recording,
+            use_container_width=True,
+            type="primary"
+        ):
             start_recording()
             st.rerun()
 
     with col2:
         if st.session_state.is_recording and not st.session_state.is_paused:
-            if st.button("⏸️ 暫停", use_container_width=True):
+            if st.button("⏸ Pause", use_container_width=True):
                 pause_recording()
                 st.rerun()
         elif st.session_state.is_recording and st.session_state.is_paused:
-            if st.button("▶️ 繼續", use_container_width=True):
+            if st.button("▶ Resume", use_container_width=True):
                 resume_recording()
                 st.rerun()
 
     with col3:
-        if st.button("⏹️ 停止", disabled=not st.session_state.is_recording, use_container_width=True):
+        if st.button("⏹ Stop", disabled=not st.session_state.is_recording, use_container_width=True, type="secondary"):
             stop_recording()
             st.rerun()
 
-    # 狀態指示
-    st.divider()
-
-    if st.session_state.is_recording:
-        if st.session_state.is_paused:
-            st.markdown("### <span class='status-paused'>⏸️ 已暫停</span>", unsafe_allow_html=True)
-        else:
-            st.markdown("### <span class='status-recording'>🔴 錄音中</span>", unsafe_allow_html=True)
-    else:
-        st.markdown("### <span class='status-stopped'>⚫ 已停止</span>", unsafe_allow_html=True)
-
-    st.divider()
+    st.markdown("<div style='height: 2rem; border-bottom: 1px solid var(--color-bg-tertiary);'></div>", unsafe_allow_html=True)
 
     # 顯示逐字稿
-    st.subheader("即時辨識結果")
+    st.markdown("""
+    <div style='margin: 2rem 0 1rem 0;'>
+        <h2 style='font-size: 1.25rem; font-weight: 600; margin: 0;'>
+            Transcription Results
+        </h2>
+        <p style='font-size: 0.875rem; color: var(--color-text-secondary); margin: 0.25rem 0 0 0;'>
+            Real-time translation powered by Whisper AI and GPT
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     # 從 controller 獲取逐字稿（如果正在錄音）
     transcripts = []
@@ -849,60 +1300,137 @@ def main():
             mode = item['mode']
             language = item.get('language', 'ja')
 
-            # 根據語言選擇樣式
-            if language == "zh":
-                bg_class = "chinese-text"
-                lang_label = "🈯 中文"
-            elif language == "en":
-                bg_class = "english-text"
-                lang_label = "🌐 英文"
-            else:
-                bg_class = "japanese-text"
-                lang_label = "📝 日語"
-
             # 雙語/多語言顯示
             if st.session_state.show_bilingual and texts:
-                # 構建多語言顯示內容
-                display_content = f"<span class='timestamp'>[{timestamp_str}]</span> <span class='latency'>(延遲：{latency}秒)</span><br>"
+                # 構建多語言顯示卡片
+                card_header = f"""
+                <div class='transcript-card'>
+                    <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;'>
+                        <span class='timestamp'>{timestamp_str}</span>
+                        <span class='latency'>{latency}s</span>
+                    </div>
+                """
+
+                card_body = ""
 
                 if mode == "transcribe":
-                    # 單語模式，只顯示原文
-                    display_content += f"<strong>📝 原文：</strong>{texts.get('original', text)}"
+                    # 單語模式
+                    original_text = texts.get('original', text)
+                    card_body += f"""
+                    <div style='margin-bottom: 0.75rem;'>
+                        <div class='language-label' style='color: var(--color-text-tertiary);'>
+                            <span>●</span> ORIGINAL
+                        </div>
+                        <div style='color: var(--color-text-primary); line-height: 1.7;'>
+                            {original_text}
+                        </div>
+                    </div>
+                    """
 
                 elif mode == "translate":
                     # 雙語：日語 + 英文
-                    display_content += f"<strong>📝 日語：</strong>{texts.get('ja', '')}<br>"
-                    display_content += f"<strong>🌐 英文：</strong>{texts.get('en', text)}"
+                    ja_text = texts.get('ja', '')
+                    en_text = texts.get('en', text)
+
+                    if ja_text:
+                        card_body += f"""
+                        <div class='japanese-text' style='margin-bottom: 0.75rem;'>
+                            <div class='language-label' style='color: #007aff;'>
+                                <span>●</span> JAPANESE
+                            </div>
+                            <div>{ja_text}</div>
+                        </div>
+                        """
+
+                    if en_text:
+                        card_body += f"""
+                        <div class='english-text'>
+                            <div class='language-label' style='color: #34c759;'>
+                                <span>●</span> ENGLISH
+                            </div>
+                            <div>{en_text}</div>
+                        </div>
+                        """
 
                 elif mode == "translate_zh":
                     # 三語：日語 + 英文 + 中文
-                    display_content += f"<strong>📝 日語：</strong>{texts.get('ja', '')}<br>"
-                    display_content += f"<strong>🌐 英文：</strong>{texts.get('en', '')}<br>"
-                    display_content += f"<strong>🈯 中文：</strong>{texts.get('zh', text)}"
+                    ja_text = texts.get('ja', '')
+                    en_text = texts.get('en', '')
+                    zh_text = texts.get('zh', text)
+
+                    if ja_text:
+                        card_body += f"""
+                        <div class='japanese-text' style='margin-bottom: 0.75rem;'>
+                            <div class='language-label' style='color: #007aff;'>
+                                <span>●</span> JAPANESE
+                            </div>
+                            <div>{ja_text}</div>
+                        </div>
+                        """
+
+                    if en_text:
+                        card_body += f"""
+                        <div class='english-text' style='margin-bottom: 0.75rem;'>
+                            <div class='language-label' style='color: #34c759;'>
+                                <span>●</span> ENGLISH
+                            </div>
+                            <div>{en_text}</div>
+                        </div>
+                        """
+
+                    if zh_text:
+                        card_body += f"""
+                        <div class='chinese-text'>
+                            <div class='language-label' style='color: #ff9500;'>
+                                <span>●</span> CHINESE
+                            </div>
+                            <div>{zh_text}</div>
+                        </div>
+                        """
+
+                card_footer = "</div>"
+
+                st.markdown(card_header + card_body + card_footer, unsafe_allow_html=True)
+
+            else:
+                # 單語顯示
+                # 根據語言選擇樣式
+                if language == "zh":
+                    lang_label = "CHINESE"
+                    lang_color = "#ff9500"
+                elif language == "en":
+                    lang_label = "ENGLISH"
+                    lang_color = "#34c759"
+                else:
+                    lang_label = "JAPANESE"
+                    lang_color = "#007aff"
 
                 st.markdown(
                     f"""
-                    <div class='{bg_class}'>
-                        {display_content}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            else:
-                # 單語顯示（原有邏輯）
-                st.markdown(
-                    f"""
-                    <div class='{bg_class}'>
-                        <span class='timestamp'>[{timestamp_str}]</span>
-                        <span class='latency'>({lang_label} · 延遲：{latency}秒)</span><br>
-                        {text}
+                    <div class='transcript-card'>
+                        <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;'>
+                            <span class='timestamp'>{timestamp_str}</span>
+                            <span class='latency'>{latency}s</span>
+                        </div>
+                        <div class='language-label' style='color: {lang_color};'>
+                            <span>●</span> {lang_label}
+                        </div>
+                        <div style='color: var(--color-text-primary); line-height: 1.7; margin-top: 0.5rem;'>
+                            {text}
+                        </div>
                     </div>
                     """,
                     unsafe_allow_html=True
                 )
 
     else:
-        st.info("尚無辨識結果，請開始錄音")
+        st.markdown("""
+        <div style='text-align: center; padding: 4rem 2rem; color: var(--color-text-tertiary);'>
+            <div style='font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;'>🎙</div>
+            <div style='font-size: 1rem; font-weight: 500;'>No transcription yet</div>
+            <div style='font-size: 0.875rem; margin-top: 0.5rem;'>Click "Start Recording" to begin</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # 停止後顯示下載按鈕
     if not st.session_state.is_recording and transcripts:
@@ -910,29 +1438,29 @@ def main():
 
         # 顯示即時逐字稿檔案位置
         if st.session_state.live_transcript_path and Path(st.session_state.live_transcript_path).exists():
-            st.info(f"📝 即時逐字稿已自動記錄：`{st.session_state.live_transcript_path}`")
+            st.info(f"Live transcript saved automatically: `{st.session_state.live_transcript_path}`")
 
         col1, col2 = st.columns(2)
 
         with col1:
             # 下載逐字稿（支援語言選擇）
-            st.subheader("📥 下載逐字稿")
+            st.markdown("<h3>DOWNLOAD TRANSCRIPT</h3>", unsafe_allow_html=True)
 
             language_options = {
-                "all": "🌐 全部語言（日文+英文+中文）",
-                "ja": "📝 僅日文",
-                "en": "🌐 僅英文",
-                "zh": "🈯 僅中文"
+                "all": "All Languages (JA + EN + ZH)",
+                "ja": "Japanese Only",
+                "en": "English Only",
+                "zh": "Chinese Only"
             }
 
             selected_language = st.selectbox(
-                "選擇下載語言",
+                "Select Language",
                 list(language_options.keys()),
                 format_func=lambda x: language_options[x],
                 key='download_language_selection'
             )
 
-            if st.button("📥 產生下載檔案", use_container_width=True):
+            if st.button("Generate File", use_container_width=True, type="primary"):
                 file_path = save_transcript_to_file(
                     transcripts,
                     meeting_name=st.session_state.meeting_name,
@@ -942,36 +1470,36 @@ def main():
                 with open(file_path, 'r', encoding='utf-8') as f:
                     transcript_content = f.read()
                 st.download_button(
-                    label="💾 儲存 TXT 檔案",
+                    label="Download TXT",
                     data=transcript_content,
                     file_name=Path(file_path).name,
                     mime="text/plain",
                     use_container_width=True
                 )
-                st.success(f"逐字稿已產生：{file_path}")
+                st.success(f"File generated: {Path(file_path).name}")
 
         with col2:
             # 下載錄音
-            st.subheader("📥 下載錄音")
+            st.markdown("<h3>DOWNLOAD AUDIO</h3>", unsafe_allow_html=True)
             if st.session_state.recorder:
                 stats = st.session_state.recorder.get_recording_stats()
                 recording_file = stats.get('file_path')
                 if recording_file and Path(recording_file).exists():
                     file_size_mb = Path(recording_file).stat().st_size / 1024 / 1024
-                    st.caption(f"檔案大小：{file_size_mb:.2f} MB")
+                    st.caption(f"File size: {file_size_mb:.2f} MB")
                     with open(recording_file, 'rb') as f:
                         audio_data = f.read()
                     st.download_button(
-                        label="📥 下載 WAV 錄音",
+                        label="Download WAV",
                         data=audio_data,
                         file_name=Path(recording_file).name,
                         mime="audio/wav",
                         use_container_width=True
                     )
                 else:
-                    st.info("無錄音檔案")
+                    st.info("No audio file available")
             else:
-                st.info("無錄音檔案")
+                st.info("No audio file available")
 
     # 自動重新整理（錄音中時）
     if st.session_state.is_recording:
