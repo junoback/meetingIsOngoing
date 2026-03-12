@@ -51,7 +51,10 @@ class AudioRecorder:
 
         # 統計資訊
         self.total_duration = 0  # 總錄音時長（秒）
-        self.chunks_processed = 0  # 已處理片段數
+        self.chunks_processed = 0  # 已送往 API 的片段數
+        self.chunks_captured = 0  # 已捕捉片段數（包含靜音）
+        self.chunks_skipped_silence = 0  # 因靜音被跳過的片段數
+        self.last_rms = 0.0  # 最近一個片段的 RMS
         self.recording_start_time = None
 
     @staticmethod
@@ -201,6 +204,8 @@ class AudioRecorder:
 
                 # 檢測是否為靜音
                 rms = np.sqrt(np.mean(audio_chunk ** 2))
+                self.last_rms = float(rms)
+                self.chunks_captured += 1
                 is_silent = self._is_silent(audio_chunk)
 
                 print(f"🔊 音訊片段 RMS: {rms:.6f}, 靜音閾值: {self.silence_threshold:.6f}, 靜音: {is_silent}")
@@ -216,6 +221,7 @@ class AudioRecorder:
                     self.chunks_processed += 1
                     print(f"✅ 音訊片段已加入佇列（總計：{self.chunks_processed}）")
                 else:
+                    self.chunks_skipped_silence += 1
                     print(f"⏭️ 音訊片段因靜音被跳過")
 
                 # 更新總時長
@@ -289,6 +295,9 @@ class AudioRecorder:
         # 重置統計資訊
         self.total_duration = 0
         self.chunks_processed = 0
+        self.chunks_captured = 0
+        self.chunks_skipped_silence = 0
+        self.last_rms = 0.0
         self.recording_start_time = time.time()
         self.audio_buffer.clear()
 
@@ -389,6 +398,9 @@ class AudioRecorder:
             'duration': self.total_duration,
             'file_size': file_size,
             'chunks_processed': self.chunks_processed,
+            'chunks_captured': self.chunks_captured,
+            'chunks_skipped_silence': self.chunks_skipped_silence,
+            'last_rms': self.last_rms,
             'is_recording': self.is_recording,
             'is_paused': self.is_paused,
             'file_path': str(self.recording_file_path) if self.recording_file_path else None

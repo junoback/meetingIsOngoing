@@ -5,6 +5,7 @@
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 from datetime import datetime
 from pathlib import Path
@@ -24,414 +25,857 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 企業級 CSS 設計系統
+# 深色模式友善的 UI 主題
 st.markdown("""
 <style>
-    /* ============================================
-       全域設定 - macOS 質感基礎
-       ============================================ */
-
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Manrope:wght@400;500;600;700;800&display=swap');
 
     :root {
-        /* 配色系統 - macOS Big Sur 風格 */
-        --color-bg-primary: #ffffff;
-        --color-bg-secondary: #f5f5f7;
-        --color-bg-tertiary: #e8e8ed;
-        --color-surface: #ffffff;
-        --color-surface-raised: #ffffff;
-
-        /* 文字色彩 */
-        --color-text-primary: #1d1d1f;
-        --color-text-secondary: #6e6e73;
-        --color-text-tertiary: #86868b;
-
-        /* 品牌色彩 - 專業且克制 */
-        --color-accent-blue: #007aff;
-        --color-accent-green: #34c759;
-        --color-accent-orange: #ff9500;
-        --color-accent-red: #ff3b30;
-
-        /* 語言色彩 - 柔和且易辨識 */
-        --color-lang-ja: #e8f4fd;
-        --color-lang-ja-border: #b3d9f2;
-        --color-lang-en: #e8f8f0;
-        --color-lang-en-border: #b3e6d4;
-        --color-lang-zh: #fff4e8;
-        --color-lang-zh-border: #ffd9a3;
-
-        /* 陰影 - 微妙且有層次 */
-        --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
-        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
-        --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
-        --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.16);
-
-        /* 圓角 */
-        --radius-sm: 8px;
-        --radius-md: 12px;
-        --radius-lg: 16px;
-        --radius-xl: 20px;
-
-        /* 間距 */
-        --space-xs: 4px;
-        --space-sm: 8px;
-        --space-md: 16px;
-        --space-lg: 24px;
-        --space-xl: 32px;
-        --space-2xl: 48px;
+        color-scheme: light dark;
+        --bg-base: #f4efe7;
+        --bg-alt: #f8f6f1;
+        --panel: rgba(255, 255, 255, 0.72);
+        --panel-strong: rgba(255, 255, 255, 0.88);
+        --surface-border: rgba(20, 31, 43, 0.08);
+        --surface-border-strong: rgba(20, 31, 43, 0.14);
+        --text-strong: #12202d;
+        --text-main: #2d3e4f;
+        --text-muted: #6a7c8f;
+        --chip-bg: rgba(255, 255, 255, 0.62);
+        --accent-primary: #0f766e;
+        --accent-secondary: #2563eb;
+        --accent-warm: #d97706;
+        --accent-red: #dc2626;
+        --accent-green: #16a34a;
+        --shadow-sm: 0 20px 40px rgba(15, 23, 42, 0.08);
+        --shadow-md: 0 28px 60px rgba(15, 23, 42, 0.14);
+        --shadow-lg: 0 36px 84px rgba(15, 23, 42, 0.18);
+        --tone-ja: rgba(37, 99, 235, 0.08);
+        --tone-ja-border: rgba(37, 99, 235, 0.22);
+        --tone-en: rgba(22, 163, 74, 0.08);
+        --tone-en-border: rgba(22, 163, 74, 0.22);
+        --tone-zh: rgba(217, 119, 6, 0.1);
+        --tone-zh-border: rgba(217, 119, 6, 0.24);
+        --tone-neutral: rgba(100, 116, 139, 0.08);
+        --tone-neutral-border: rgba(100, 116, 139, 0.18);
     }
 
-    /* ============================================
-       Streamlit 元素覆寫
-       ============================================ */
-
-    /* 主容器 */
-    .main {
-        background-color: var(--color-bg-secondary);
-        padding: var(--space-xl) var(--space-2xl);
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg-base: #08111a;
+            --bg-alt: #0d1722;
+            --panel: rgba(10, 18, 28, 0.74);
+            --panel-strong: rgba(13, 23, 34, 0.9);
+            --surface-border: rgba(148, 163, 184, 0.14);
+            --surface-border-strong: rgba(148, 163, 184, 0.24);
+            --text-strong: #eef6ff;
+            --text-main: #d7e4f2;
+            --text-muted: #8ba0b6;
+            --chip-bg: rgba(15, 23, 42, 0.58);
+            --shadow-sm: 0 24px 48px rgba(2, 6, 23, 0.28);
+            --shadow-md: 0 30px 72px rgba(2, 6, 23, 0.34);
+            --shadow-lg: 0 44px 96px rgba(2, 6, 23, 0.42);
+            --tone-ja: rgba(59, 130, 246, 0.14);
+            --tone-ja-border: rgba(96, 165, 250, 0.3);
+            --tone-en: rgba(22, 163, 74, 0.14);
+            --tone-en-border: rgba(74, 222, 128, 0.3);
+            --tone-zh: rgba(217, 119, 6, 0.16);
+            --tone-zh-border: rgba(251, 191, 36, 0.34);
+            --tone-neutral: rgba(100, 116, 139, 0.16);
+            --tone-neutral-border: rgba(148, 163, 184, 0.28);
+        }
     }
 
-    /* 隱藏 Streamlit 品牌元素 */
+    html,
+    body,
+    [data-testid="stAppViewContainer"],
+    .stApp {
+        font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+        color: var(--text-main);
+        background: transparent;
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(14, 165, 233, 0.16), transparent 32%),
+            radial-gradient(circle at top right, rgba(245, 158, 11, 0.16), transparent 28%),
+            linear-gradient(180deg, var(--bg-base) 0%, var(--bg-alt) 100%);
+    }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* 側邊欄樣式 */
+    .main .block-container {
+        max-width: 1420px;
+        padding: 2.25rem 2rem 4rem 2rem;
+    }
+
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #ffffff 0%, #f9f9fb 100%);
-        border-right: 1px solid rgba(0, 0, 0, 0.06);
-        padding: var(--space-lg) !important;
+        background: linear-gradient(180deg, var(--panel-strong) 0%, var(--panel) 100%);
+        border-right: 1px solid var(--surface-border);
+        backdrop-filter: blur(24px);
     }
 
     [data-testid="stSidebar"] > div:first-child {
-        padding-top: var(--space-xl);
+        padding: 1.25rem 1rem 2rem 1rem;
     }
 
-    /* 標題樣式 */
-    h1 {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: 700;
-        font-size: 2rem;
-        letter-spacing: -0.02em;
-        color: var(--color-text-primary);
-        margin-bottom: var(--space-lg);
-        line-height: 1.2;
+    h1,
+    h2,
+    h3,
+    h4,
+    p,
+    label,
+    .stMarkdown,
+    .stCaption,
+    .stText {
+        font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+        color: var(--text-main);
     }
 
-    h2 {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: 600;
-        font-size: 1.25rem;
-        letter-spacing: -0.01em;
-        color: var(--color-text-primary);
-        margin-top: var(--space-xl);
-        margin-bottom: var(--space-md);
+    h1,
+    h2,
+    h3,
+    h4 {
+        color: var(--text-strong);
+        letter-spacing: -0.03em;
     }
 
-    h3 {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: 600;
-        font-size: 1rem;
-        letter-spacing: -0.005em;
-        color: var(--color-text-secondary);
-        margin-top: var(--space-lg);
-        margin-bottom: var(--space-sm);
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.05em;
+    a {
+        color: var(--accent-secondary);
     }
 
-    /* 段落和文字 */
-    p, .stMarkdown {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: 400;
-        font-size: 0.9375rem;
-        line-height: 1.6;
-        color: var(--color-text-secondary);
-    }
-
-    /* ============================================
-       按鈕系統
-       ============================================ */
-
-    .stButton > button {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: 500;
-        font-size: 0.9375rem;
-        border-radius: var(--radius-md);
-        padding: 0.625rem 1.25rem;
+    hr {
+        margin: 1.4rem 0;
         border: none;
-        background: var(--color-accent-blue);
-        color: white;
-        box-shadow: var(--shadow-sm);
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        letter-spacing: -0.01em;
+        height: 1px;
+        background: linear-gradient(90deg, transparent 0%, var(--surface-border-strong) 50%, transparent 100%);
     }
 
-    .stButton > button:hover {
-        background: #0051d5;
+    .sidebar-brand {
+        position: relative;
+        overflow: hidden;
+        padding: 1.2rem 1.05rem 1.15rem 1.05rem;
+        border-radius: 28px;
+        border: 1px solid var(--surface-border-strong);
+        background:
+            linear-gradient(135deg, rgba(15, 118, 110, 0.16), rgba(37, 99, 235, 0.12) 58%, transparent 100%),
+            var(--panel);
         box-shadow: var(--shadow-md);
-        transform: translateY(-1px);
     }
 
-    .stButton > button:active {
-        transform: translateY(0);
-        box-shadow: var(--shadow-sm);
+    .sidebar-brand::before {
+        content: "";
+        position: absolute;
+        width: 180px;
+        height: 180px;
+        right: -72px;
+        top: -108px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.18);
+        filter: blur(8px);
     }
 
-    /* ============================================
-       輸入元素
-       ============================================ */
-
-    .stTextInput > div > div > input,
-    .stSelectbox > div > div > div,
-    .stTextArea > div > div > textarea {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 0.9375rem;
-        border: 1px solid var(--color-bg-tertiary);
-        border-radius: var(--radius-sm);
-        background: var(--color-surface);
-        padding: 0.625rem 0.875rem;
-        transition: all 0.2s ease;
-    }
-
-    .stTextInput > div > div > input:focus,
-    .stSelectbox > div > div > div:focus,
-    .stTextArea > div > div > textarea:focus {
-        border-color: var(--color-accent-blue);
-        box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
-        outline: none;
-    }
-
-    /* Slider 樣式 */
-    .stSlider > div > div > div > div {
-        background-color: var(--color-accent-blue);
-    }
-
-    /* Radio 樣式 */
-    .stRadio > div {
-        gap: var(--space-sm);
-    }
-
-    .stRadio > div > label {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-size: 0.9375rem;
-        background: var(--color-surface);
-        padding: var(--space-sm) var(--space-md);
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--color-bg-tertiary);
-        transition: all 0.2s ease;
-    }
-
-    .stRadio > div > label:hover {
-        border-color: var(--color-accent-blue);
-        background: var(--color-bg-secondary);
-    }
-
-    /* ============================================
-       卡片系統 - 翻譯結果顯示
-       ============================================ */
-
-    .transcript-card {
-        background: var(--color-surface-raised);
-        border-radius: var(--radius-lg);
-        padding: var(--space-lg);
-        margin-bottom: var(--space-md);
-        box-shadow: var(--shadow-sm);
-        border: 1px solid rgba(0, 0, 0, 0.04);
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    .transcript-card:hover {
-        box-shadow: var(--shadow-md);
-        transform: translateY(-2px);
-    }
-
-    /* 時間戳記 */
-    .timestamp {
-        font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: var(--color-text-tertiary);
-        letter-spacing: 0.02em;
-        margin-bottom: var(--space-sm);
-        display: inline-block;
-    }
-
-    /* 延遲時間 */
-    .latency {
-        font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
-        font-size: 0.6875rem;
-        color: var(--color-text-tertiary);
-        margin-left: var(--space-sm);
-        opacity: 0.7;
-    }
-
-    /* 語言標籤 */
-    .language-label {
-        font-size: 0.6875rem;
-        font-weight: 600;
+    .sidebar-kicker {
+        position: relative;
+        z-index: 1;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: var(--space-xs);
+        color: var(--text-muted);
+    }
+
+    .sidebar-title {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.55rem;
+        font-size: 1.38rem;
+        font-weight: 800;
+        line-height: 1.15;
+        color: var(--text-strong);
+    }
+
+    .sidebar-subtitle {
+        position: relative;
+        z-index: 1;
+        margin: 0.5rem 0 0 0;
+        font-size: 0.86rem;
+        line-height: 1.55;
+        color: var(--text-main);
+    }
+
+    .sidebar-note,
+    .sidebar-summary-card {
+        margin-top: 0.85rem;
+        padding: 0.95rem 1rem;
+        border-radius: 20px;
+        border: 1px solid var(--surface-border);
+        background: var(--chip-bg);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .sidebar-block-title {
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .sidebar-block-copy {
+        margin-top: 0.5rem;
+        font-size: 0.88rem;
+        line-height: 1.6;
+        color: var(--text-main);
+    }
+
+    .sidebar-summary-card {
+        display: grid;
+        gap: 0.72rem;
+    }
+
+    .sidebar-summary-row {
+        display: grid;
+        gap: 0.2rem;
+    }
+
+    .sidebar-summary-key {
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .sidebar-summary-value {
+        font-size: 0.92rem;
+        font-weight: 700;
+        line-height: 1.5;
+        color: var(--text-strong);
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .sidebar-file-note {
+        margin-top: 0.7rem;
+        font-size: 0.84rem;
+        line-height: 1.6;
+        color: var(--text-main);
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+    }
+
+    .section-label {
+        margin: 0.2rem 0 0.8rem 0;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .hero-shell {
+        position: relative;
+        overflow: hidden;
+        min-height: 100%;
+        padding: 2rem 2rem 2.15rem 2rem;
+        border-radius: 32px;
+        border: 1px solid var(--surface-border-strong);
+        background:
+            linear-gradient(135deg, rgba(15, 118, 110, 0.18), rgba(37, 99, 235, 0.14) 50%, transparent 80%),
+            var(--panel-strong);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .hero-shell::before {
+        content: "";
+        position: absolute;
+        width: 340px;
+        height: 340px;
+        right: -120px;
+        top: -160px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        filter: blur(8px);
+    }
+
+    .hero-kicker {
+        position: relative;
+        z-index: 1;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .hero-title {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.8rem;
+        font-size: clamp(2.15rem, 4.4vw, 3.6rem);
+        font-weight: 800;
+        line-height: 0.98;
+        color: var(--text-strong);
+        max-width: 12ch;
+    }
+
+    .hero-copy {
+        position: relative;
+        z-index: 1;
+        max-width: 64ch;
+        margin-top: 1rem;
+        font-size: 1rem;
+        line-height: 1.75;
+        color: var(--text-main);
+    }
+
+    .hero-pill-row {
+        position: relative;
+        z-index: 1;
         display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        margin-top: 1.3rem;
+    }
+
+    .hero-pill {
+        display: inline-flex;
         align-items: center;
-        gap: var(--space-xs);
+        gap: 0.45rem;
+        padding: 0.65rem 0.9rem;
+        border-radius: 999px;
+        border: 1px solid var(--surface-border);
+        background: var(--chip-bg);
+        font-size: 0.83rem;
+        font-weight: 600;
+        color: var(--text-strong);
     }
 
-    /* 日語文字塊 */
-    .japanese-text {
-        background: linear-gradient(135deg, var(--color-lang-ja) 0%, #f0f8ff 100%);
-        border-left: 3px solid var(--color-lang-ja-border);
-        padding: var(--space-md);
-        border-radius: var(--radius-sm);
-        margin: var(--space-sm) 0;
-        font-size: 0.9375rem;
-        line-height: 1.7;
-        color: var(--color-text-primary);
+    .status-panel {
+        height: 500px;
+        box-sizing: border-box;
+        padding: 1.2rem 1rem;
+        border-radius: 26px;
+        border: 1px solid var(--surface-border-strong);
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 30%),
+            var(--panel);
+        box-shadow: var(--shadow-md);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
     }
 
-    /* 英語文字塊 */
-    .english-text {
-        background: linear-gradient(135deg, var(--color-lang-en) 0%, #f0fff8 100%);
-        border-left: 3px solid var(--color-lang-en-border);
-        padding: var(--space-md);
-        border-radius: var(--radius-sm);
-        margin: var(--space-sm) 0;
-        font-size: 0.9375rem;
-        line-height: 1.7;
-        color: var(--color-text-primary);
+    .status-panel-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-muted);
     }
 
-    /* 中文文字塊 */
-    .chinese-text {
-        background: linear-gradient(135deg, var(--color-lang-zh) 0%, #fffaf0 100%);
-        border-left: 3px solid var(--color-lang-zh-border);
-        padding: var(--space-md);
-        border-radius: var(--radius-sm);
-        margin: var(--space-sm) 0;
-        font-size: 0.9375rem;
-        line-height: 1.7;
-        color: var(--color-text-primary);
+    .status-panel-value {
+        margin-top: 0.85rem;
+        font-size: 1.55rem;
+        font-weight: 800;
+        line-height: 1.05;
+        color: var(--text-strong);
     }
 
-    /* ============================================
-       狀態指示器
-       ============================================ */
+    .status-panel-copy {
+        margin-top: 0.45rem;
+        font-size: 0.84rem;
+        line-height: 1.55;
+        color: var(--text-main);
+    }
+
+    .status-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.7rem;
+        margin-top: auto;
+        min-height: 0;
+    }
+
+    .status-mini {
+        padding: 0.8rem 0.85rem;
+        border-radius: 18px;
+        border: 1px solid var(--surface-border);
+        background: var(--chip-bg);
+    }
+
+    .status-mini-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .status-mini-value {
+        margin-top: 0.38rem;
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-strong);
+    }
 
     .status-badge {
         display: inline-flex;
         align-items: center;
-        gap: var(--space-xs);
-        padding: var(--space-xs) var(--space-md);
-        border-radius: var(--radius-xl);
-        font-size: 0.8125rem;
-        font-weight: 500;
-        letter-spacing: -0.01em;
+        gap: 0.5rem;
+        margin-top: 0.95rem;
+        padding: 0.6rem 0.95rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
     }
 
     .status-recording {
-        background: rgba(255, 59, 48, 0.1);
-        color: var(--color-accent-red);
-        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        color: #ffe4e6;
+        background: linear-gradient(135deg, rgba(220, 38, 38, 0.92), rgba(249, 115, 22, 0.84));
+        box-shadow: 0 18px 32px rgba(220, 38, 38, 0.22);
     }
 
     .status-paused {
-        background: rgba(255, 149, 0, 0.1);
-        color: var(--color-accent-orange);
+        color: #422006;
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.92), rgba(245, 158, 11, 0.82));
+        box-shadow: 0 18px 32px rgba(245, 158, 11, 0.18);
     }
 
     .status-stopped {
-        background: rgba(142, 142, 147, 0.1);
-        color: var(--color-text-tertiary);
+        color: var(--text-strong);
+        border-color: var(--surface-border);
+        background: var(--chip-bg);
     }
 
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
+    .status-icon {
+        font-size: 0.84rem;
     }
 
-    /* 錄音指示燈 */
     .recording-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #fff5f5;
+        display: inline-block;
+        animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse-dot {
+        0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.22); }
+        50% { opacity: 0.4; box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); }
+    }
+
+    .control-caption {
+        margin: 1.3rem 0 0.75rem 0;
+        font-size: 0.74rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .control-note {
+        margin: -0.15rem 0 1rem 0;
+        font-size: 0.92rem;
+        line-height: 1.6;
+        color: var(--text-main);
+    }
+
+    .metric-shell {
+        position: relative;
+        overflow: hidden;
+        min-height: 132px;
+        padding: 1.1rem 1.15rem 1.25rem 1.15rem;
+        border-radius: 24px;
+        border: 1px solid var(--surface-border);
+        background: var(--panel);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .metric-shell::after {
+        content: "";
+        position: absolute;
+        width: 130px;
+        height: 130px;
+        right: -42px;
+        bottom: -76px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .accent-primary {
+        background:
+            linear-gradient(180deg, rgba(15, 118, 110, 0.12), transparent 52%),
+            var(--panel);
+    }
+
+    .accent-secondary {
+        background:
+            linear-gradient(180deg, rgba(37, 99, 235, 0.12), transparent 52%),
+            var(--panel);
+    }
+
+    .accent-warm {
+        background:
+            linear-gradient(180deg, rgba(217, 119, 6, 0.12), transparent 52%),
+            var(--panel);
+    }
+
+    .accent-neutral {
+        background:
+            linear-gradient(180deg, rgba(100, 116, 139, 0.12), transparent 52%),
+            var(--panel);
+    }
+
+    .metric-label {
+        position: relative;
+        z-index: 1;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .metric-value {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.75rem;
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.08;
+        color: var(--text-strong);
+    }
+
+    .metric-detail {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.45rem;
+        font-size: 0.88rem;
+        line-height: 1.5;
+        color: var(--text-main);
+    }
+
+    .section-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 1rem;
+        margin: 2rem 0 1rem 0;
+    }
+
+    .section-title {
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: var(--text-strong);
+        letter-spacing: -0.03em;
+    }
+
+    .section-copy {
+        margin-top: 0.25rem;
+        font-size: 0.92rem;
+        line-height: 1.6;
+        color: var(--text-main);
+    }
+
+    .section-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.68rem 0.9rem;
+        border-radius: 999px;
+        border: 1px solid var(--surface-border);
+        background: var(--chip-bg);
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-strong);
+        white-space: nowrap;
+    }
+
+    .transcript-card {
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+        border-radius: 28px;
+        border: 1px solid var(--surface-border);
+        background: var(--panel-strong);
+        box-shadow: var(--shadow-sm);
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    .transcript-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+
+    .transcript-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.55rem;
+    }
+
+    .timestamp,
+    .latency {
+        font-family: 'IBM Plex Mono', 'SF Mono', Monaco, monospace;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+    }
+
+    .timestamp {
+        font-size: 0.8rem;
+        color: var(--text-strong);
+    }
+
+    .latency {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .language-panel {
+        margin-top: 0.8rem;
+        padding: 1rem 1rem 1.05rem 1rem;
+        border-radius: 22px;
+        border: 1px solid var(--surface-border);
+        background: var(--chip-bg);
+    }
+
+    .language-panel.tone-ja {
+        background: var(--tone-ja);
+        border-color: var(--tone-ja-border);
+    }
+
+    .language-panel.tone-en {
+        background: var(--tone-en);
+        border-color: var(--tone-en-border);
+    }
+
+    .language-panel.tone-zh {
+        background: var(--tone-zh);
+        border-color: var(--tone-zh-border);
+    }
+
+    .language-panel.tone-neutral {
+        background: var(--tone-neutral);
+        border-color: var(--tone-neutral-border);
+    }
+
+    .language-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .language-dot {
         width: 8px;
         height: 8px;
-        border-radius: 50%;
-        background: var(--color-accent-red);
-        animation: blink 1.5s ease-in-out infinite;
-        display: inline-block;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.72;
     }
 
-    @keyframes blink {
-        0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--color-accent-red); }
-        50% { opacity: 0.3; box-shadow: none; }
+    .language-copy {
+        margin-top: 0.55rem;
+        font-size: 0.98rem;
+        line-height: 1.78;
+        color: var(--text-strong);
     }
 
-    /* ============================================
-       資訊卡片
-       ============================================ */
-
-    .stAlert {
-        background: var(--color-surface);
-        border-radius: var(--radius-md);
-        border: 1px solid var(--color-bg-tertiary);
-        padding: var(--space-md);
-        font-size: 0.875rem;
+    .empty-state {
+        padding: 4.1rem 2rem;
+        border-radius: 32px;
+        border: 1px dashed var(--surface-border-strong);
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 65%),
+            var(--panel);
+        text-align: center;
+        box-shadow: var(--shadow-sm);
     }
 
-    /* Metric 卡片 */
-    [data-testid="stMetricValue"] {
-        font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
-        font-size: 1.5rem;
+    .empty-icon {
+        font-size: 3.3rem;
+        opacity: 0.7;
+    }
+
+    .empty-title {
+        margin-top: 1rem;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: var(--text-strong);
+    }
+
+    .empty-copy {
+        max-width: 42ch;
+        margin: 0.55rem auto 0 auto;
+        font-size: 0.94rem;
+        line-height: 1.7;
+        color: var(--text-main);
+    }
+
+    .stButton > button,
+    [data-testid="stDownloadButton"] button {
+        min-height: 3.5rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        padding: 0.88rem 1.25rem;
+        font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+    }
+
+    .stButton > button[kind="primary"] {
+        color: #f8fafc;
+        background: linear-gradient(135deg, #0f766e, #2563eb 58%, #1d4ed8 100%);
+        box-shadow: 0 26px 44px rgba(37, 99, 235, 0.28);
+    }
+
+    .stButton > button[kind="secondary"],
+    [data-testid="stDownloadButton"] button {
+        color: var(--text-strong);
+        background: linear-gradient(180deg, rgba(217, 119, 6, 0.1), var(--chip-bg));
+        border-color: var(--surface-border);
+        box-shadow: 0 14px 26px rgba(15, 23, 42, 0.08);
+    }
+
+    .stButton > button:hover,
+    [data-testid="stDownloadButton"] button:hover {
+        transform: translateY(-1px);
+    }
+
+    .stButton > button[kind="primary"]:hover {
+        box-shadow: 0 26px 44px rgba(37, 99, 235, 0.28);
+    }
+
+    .stButton > button:disabled,
+    [data-testid="stDownloadButton"] button:disabled {
+        opacity: 0.38;
+        transform: none;
+    }
+
+    [data-testid="stSidebar"] .stButton > button {
+        min-height: 2.85rem;
+        font-size: 0.92rem;
+        box-shadow: none;
+    }
+
+    div[data-baseweb="input"] > div,
+    div[data-baseweb="base-input"] > div,
+    div[data-baseweb="select"] > div,
+    .stTextInput input,
+    .stTextArea textarea {
+        border-radius: 18px !important;
+        border: 1px solid var(--surface-border) !important;
+        background: var(--panel) !important;
+        color: var(--text-strong) !important;
+        box-shadow: none !important;
+    }
+
+    [data-testid="stSidebar"] div[data-baseweb="select"] span {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: unset !important;
+        line-height: 1.4 !important;
+    }
+
+    [data-testid="stSidebar"] div[data-baseweb="select"] > div {
+        min-height: 3.85rem;
+        align-items: flex-start;
+        padding-top: 0.7rem;
+        padding-bottom: 0.7rem;
+    }
+
+    .stTextInput input::placeholder,
+    .stTextArea textarea::placeholder {
+        color: var(--text-muted) !important;
+    }
+
+    .stTextInput label,
+    .stSelectbox label,
+    .stSlider label,
+    .stCheckbox label,
+    .stRadio label,
+    .stTextArea label {
+        color: var(--text-main) !important;
         font-weight: 600;
-        color: var(--color-text-primary);
+    }
+
+    .stRadio > div {
+        gap: 0.55rem;
+    }
+
+    .stRadio > div > label {
+        border-radius: 18px;
+        border: 1px solid var(--surface-border);
+        background: var(--panel);
+        padding: 0.78rem 0.92rem;
+    }
+
+    .stRadio > div > label:hover {
+        border-color: var(--surface-border-strong);
+    }
+
+    .stSlider [data-baseweb="slider"] [role="slider"] {
+        background: var(--accent-secondary);
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+    }
+
+    .stSlider [data-baseweb="slider"] > div > div {
+        background: rgba(37, 99, 235, 0.22);
+    }
+
+    label[data-baseweb="checkbox"] > div:first-child {
+        border-color: var(--surface-border-strong) !important;
+        background: var(--panel) !important;
+    }
+
+    [data-testid="stMetric"] {
+        border-radius: 22px;
+        border: 1px solid var(--surface-border);
+        background: var(--panel);
+        padding: 0.95rem 1rem;
+    }
+
+    [data-testid="stMetricValue"] {
+        font-family: 'IBM Plex Mono', 'SF Mono', Monaco, monospace;
+        font-size: 1.25rem;
+        color: var(--text-strong);
     }
 
     [data-testid="stMetricLabel"] {
-        font-size: 0.8125rem;
-        color: var(--color-text-secondary);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-weight: 500;
+        color: var(--text-muted);
     }
 
-    /* ============================================
-       分隔線
-       ============================================ */
-
-    hr {
-        margin: var(--space-xl) 0;
-        border: none;
-        height: 1px;
-        background: linear-gradient(90deg,
-            transparent 0%,
-            var(--color-bg-tertiary) 50%,
-            transparent 100%);
+    .streamlit-expanderHeader,
+    .stAlert,
+    .stCodeBlock,
+    pre {
+        border-radius: 20px !important;
+        border: 1px solid var(--surface-border) !important;
+        background: var(--panel) !important;
+        color: var(--text-main) !important;
     }
 
-    /* ============================================
-       容器和佈局
-       ============================================ */
-
-    .block-container {
-        padding-top: var(--space-xl);
-        padding-bottom: var(--space-2xl);
-        max-width: 1400px;
+    [data-testid="stMarkdownContainer"] p {
+        color: var(--text-main);
     }
-
-    /* Expander */
-    .streamlit-expanderHeader {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        font-weight: 500;
-        font-size: 0.9375rem;
-        background: var(--color-surface);
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--color-bg-tertiary);
-        padding: var(--space-md);
-    }
-
-    /* ============================================
-       滾動條
-       ============================================ */
 
     ::-webkit-scrollbar {
         width: 8px;
@@ -443,33 +887,72 @@ st.markdown("""
     }
 
     ::-webkit-scrollbar-thumb {
-        background: var(--color-bg-tertiary);
-        border-radius: 4px;
+        background: var(--surface-border-strong);
+        border-radius: 999px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
-        background: var(--color-text-tertiary);
+        background: var(--text-muted);
     }
 
-    /* ============================================
-       響應式設計
-       ============================================ */
-
-    @media (max-width: 768px) {
-        .main {
-            padding: var(--space-md);
+    @media (max-width: 900px) {
+        .main .block-container {
+            padding: 1.5rem 1rem 3rem 1rem;
         }
 
-        h1 {
-            font-size: 1.5rem;
+        .hero-shell,
+        .status-panel,
+        .transcript-card,
+        .empty-state {
+            border-radius: 24px;
         }
 
-        .transcript-card {
-            padding: var(--space-md);
+        .status-panel {
+            height: auto;
+            min-height: 420px;
+        }
+
+        .hero-title {
+            max-width: none;
+            font-size: 2.4rem;
+        }
+
+        .status-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .section-head {
+            flex-direction: column;
+            align-items: flex-start;
         }
     }
 </style>
 """, unsafe_allow_html=True)
+
+
+MODE_OPTIONS = {
+    "transcribe": "Transcribe (Japanese to Japanese)",
+    "translate": "Translate (Japanese to English)",
+    "translate_zh": "Translate (Japanese to Chinese)"
+}
+
+LANGUAGE_OPTIONS = {
+    "ja": "Japanese",
+    "en": "English",
+    "zh": "Chinese",
+    "ko": "Korean",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German"
+}
+
+MODE_SUMMARIES = {
+    "transcribe": "Verbatim Japanese transcript with no translation layer.",
+    "translate": "Dual-language capture for Japanese and English.",
+    "translate_zh": "Three-step pipeline for Japanese, English, and Chinese."
+}
+
+TOP_PANEL_HEIGHT = 500
 
 
 def init_session_state():
@@ -521,6 +1004,352 @@ def add_error_message(message: str):
     if len(st.session_state.error_messages) > 10:
         st.session_state.error_messages = st.session_state.error_messages[-10:]
     print(f"ERROR: {error_entry}")  # 輸出到 Terminal
+
+
+def get_status_metadata():
+    """回傳目前錄音狀態的文案與樣式"""
+    if st.session_state.is_recording:
+        if st.session_state.is_paused:
+            return {
+                "label": "Paused",
+                "description": "Capture is temporarily on hold. Resume when the conversation starts again.",
+                "css_class": "status-paused",
+                "icon_html": "<span class='status-icon'>⏸</span>"
+            }
+        return {
+            "label": "Recording",
+            "description": "Audio capture and translation are running live. New lines will appear below in real time.",
+            "css_class": "status-recording",
+            "icon_html": "<span class='recording-indicator'></span>"
+        }
+    return {
+        "label": "Ready",
+        "description": "Set the audio route and meeting context, then start a fresh session.",
+        "css_class": "status-stopped",
+        "icon_html": "<span class='status-icon'>⏹</span>"
+    }
+
+
+def render_metric_card(title: str, value: str, detail: str, accent: str = "accent-primary"):
+    """渲染摘要資訊卡"""
+    st.markdown(
+        f"""
+        <div class='metric-shell {accent}'>
+            <div class='metric-label'>{html_module.escape(title)}</div>
+            <div class='metric-value'>{html_module.escape(value)}</div>
+            <div class='metric-detail'>{html_module.escape(detail)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def render_sidebar_summary_card(rows: list[tuple[str, str]]):
+    """渲染側邊欄摘要卡片"""
+    row_html = "".join(
+        f"<div class='sidebar-summary-row'><div class='sidebar-summary-key'>{html_module.escape(label)}</div><div class='sidebar-summary-value'>{html_module.escape(value)}</div></div>"
+        for label, value in rows
+        if value
+    )
+    if row_html:
+        st.markdown(f"<div class='sidebar-summary-card'>{row_html}</div>", unsafe_allow_html=True)
+
+
+def build_language_panel(label: str, text: str, tone_class: str) -> str:
+    """建立語言區塊 HTML"""
+    escaped_text = html_module.escape(text).replace("\n", "<br>")
+    return f"""
+    <div class='language-panel {tone_class}'>
+        <div class='language-label'>
+            <span class='language-dot'></span>
+            <span>{html_module.escape(label)}</span>
+        </div>
+        <div class='language-copy'>{escaped_text}</div>
+    </div>
+    """
+
+
+def render_transcript_card(item: dict, show_multilingual: bool):
+    """渲染單一逐字稿卡片"""
+    timestamp_str = item['timestamp'].strftime('%H:%M:%S')
+    latency = item['latency']
+    text = item['text']
+    texts = item.get('texts', {})
+    mode = item['mode']
+    language = item.get('language', 'ja')
+
+    panels = []
+
+    if show_multilingual and texts:
+        if mode == "transcribe":
+            panels.append(build_language_panel("Original", texts.get('original', text), "tone-neutral"))
+        elif mode == "translate":
+            if texts.get('ja'):
+                panels.append(build_language_panel("Japanese", texts['ja'], "tone-ja"))
+            if texts.get('en') or text:
+                panels.append(build_language_panel("English", texts.get('en', text), "tone-en"))
+        else:
+            if texts.get('ja'):
+                panels.append(build_language_panel("Japanese", texts['ja'], "tone-ja"))
+            if texts.get('en'):
+                panels.append(build_language_panel("English", texts['en'], "tone-en"))
+            if texts.get('zh') or text:
+                panels.append(build_language_panel("Chinese", texts.get('zh', text), "tone-zh"))
+    else:
+        label_map = {
+            "zh": ("Chinese", "tone-zh"),
+            "en": ("English", "tone-en")
+        }
+        label, tone_class = label_map.get(language, ("Japanese", "tone-ja"))
+        panels.append(build_language_panel(label, text, tone_class))
+
+    st.markdown(
+        f"""
+        <div class='transcript-card'>
+            <div class='transcript-top'>
+                <span class='timestamp'>{timestamp_str}</span>
+                <span class='latency'>{latency:.1f}s latency</span>
+            </div>
+            {''.join(panels)}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def get_chinese_feed_items(transcripts: list[dict]) -> list[dict]:
+    """取得依時間順序排列的中文結果"""
+    items = []
+    for item in transcripts:
+        texts = item.get('texts', {})
+        chinese_text = texts.get('zh', '')
+        if not chinese_text and item.get('language') == 'zh':
+            chinese_text = item.get('text', '')
+
+        if chinese_text:
+            items.append({
+                "timestamp": item['timestamp'].strftime('%H:%M:%S'),
+                "text": chinese_text
+            })
+    return items
+
+
+def render_live_chinese_panel(
+    chinese_items: list[dict],
+    current_mode: str,
+    status_metadata: dict,
+    meeting_name: str,
+    meeting_topic: str,
+    is_recording: bool
+):
+    """渲染上方中文閱讀流，保持最新內容可見"""
+    if chinese_items:
+        content_html = (
+            "<div class='feed-stream'>"
+            + "<br>".join(
+                html_module.escape(item['text']).replace("\n", "<br>")
+                for item in chinese_items
+            )
+            + "</div>"
+        )
+    else:
+        if current_mode != "translate_zh":
+            empty_title = "目前模式不輸出中文"
+            empty_copy = "切換到 Translate (Japanese to Chinese) 後，這裡會依照語音順序累積中文閱讀流。"
+        elif is_recording:
+            empty_title = "中文閱讀流已待命"
+            empty_copy = "正在等待第一段可翻譯內容。新內容會自動追加在下方，並保持最新段落可見。"
+        else:
+            empty_title = "等待開始"
+            empty_copy = "開始錄音後，中文翻譯會從上到下按照發言順序串接，方便連續閱讀。"
+
+        content_html = f"""
+        <div class="feed-empty">
+            <div class="feed-empty-title">{html_module.escape(empty_title)}</div>
+            <div class="feed-empty-copy">{html_module.escape(empty_copy)}</div>
+        </div>
+        """
+
+    panel_html = f"""
+    <!doctype html>
+    <html>
+    <head>
+        <meta charset="utf-8" />
+        <style>
+            :root {{
+                color-scheme: light dark;
+                --bg: rgba(255, 255, 255, 0.88);
+                --border: rgba(20, 31, 43, 0.12);
+                --text-strong: #12202d;
+                --text-main: #294053;
+                --text-muted: #64748b;
+                --chip: rgba(255, 255, 255, 0.78);
+                --entry: rgba(255, 255, 255, 0.68);
+                --accent: linear-gradient(135deg, rgba(15, 118, 110, 0.2), rgba(37, 99, 235, 0.16));
+                --shadow: 0 26px 64px rgba(15, 23, 42, 0.14);
+            }}
+
+            @media (prefers-color-scheme: dark) {{
+                :root {{
+                    --bg: rgba(9, 16, 24, 0.92);
+                    --border: rgba(148, 163, 184, 0.16);
+                    --text-strong: #eef6ff;
+                    --text-main: #d7e4f2;
+                    --text-muted: #8ba0b6;
+                    --chip: rgba(15, 23, 42, 0.62);
+                    --entry: rgba(12, 20, 30, 0.74);
+                    --accent: linear-gradient(135deg, rgba(15, 118, 110, 0.22), rgba(37, 99, 235, 0.18));
+                    --shadow: 0 30px 72px rgba(2, 6, 23, 0.34);
+                }}
+            }}
+
+            * {{ box-sizing: border-box; }}
+            html, body {{
+                margin: 0;
+                background: transparent;
+                font-family: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+                color: var(--text-main);
+            }}
+
+            .panel {{
+                height: {TOP_PANEL_HEIGHT}px;
+                padding: 1.15rem;
+                border-radius: 30px;
+                border: 1px solid var(--border);
+                background:
+                    radial-gradient(circle at top right, rgba(255,255,255,0.1), transparent 34%),
+                    var(--accent),
+                    var(--bg);
+                box-shadow: var(--shadow);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }}
+
+            .panel-head {{
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 1rem;
+                margin-bottom: 0.95rem;
+            }}
+
+            .eyebrow {{
+                font-size: 0.72rem;
+                font-weight: 800;
+                letter-spacing: 0.16em;
+                text-transform: uppercase;
+                color: var(--text-muted);
+            }}
+
+            .title {{
+                margin-top: 0.55rem;
+                font-size: 1.48rem;
+                font-weight: 800;
+                line-height: 1.15;
+                color: var(--text-strong);
+                word-break: break-word;
+            }}
+
+            .subtitle {{
+                margin-top: 0.38rem;
+                font-size: 0.92rem;
+                line-height: 1.55;
+                color: var(--text-main);
+                word-break: break-word;
+            }}
+
+            .status-chip {{
+                flex-shrink: 0;
+                padding: 0.58rem 0.82rem;
+                border-radius: 999px;
+                border: 1px solid var(--border);
+                background: var(--chip);
+                font-size: 0.8rem;
+                font-weight: 700;
+                color: var(--text-strong);
+            }}
+
+            .feed {{
+                flex: 1;
+                min-height: 0;
+                padding-right: 0.3rem;
+                overflow-y: auto;
+                border-radius: 24px;
+                border: 1px solid var(--border);
+                background: var(--entry);
+                padding: 1rem 1.05rem;
+            }}
+
+            .feed-stream {{
+                font-size: 0.98rem;
+                line-height: 1.78;
+                color: var(--text-strong);
+                white-space: normal;
+                word-break: break-word;
+                overflow-wrap: anywhere;
+            }}
+
+            .feed-empty {{
+                height: 100%;
+                display: grid;
+                place-items: center;
+                align-content: center;
+                text-align: center;
+                padding: 0.6rem;
+            }}
+
+            .feed-empty-title {{
+                font-size: 1.12rem;
+                font-weight: 800;
+                color: var(--text-strong);
+            }}
+
+            .feed-empty-copy {{
+                max-width: 38ch;
+                margin-top: 0.55rem;
+                font-size: 0.92rem;
+                line-height: 1.68;
+                color: var(--text-main);
+            }}
+
+            .feed::-webkit-scrollbar {{
+                width: 8px;
+            }}
+
+            .feed::-webkit-scrollbar-thumb {{
+                border-radius: 999px;
+                background: var(--border);
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="panel">
+            <div class="panel-head">
+                <div>
+                    <div class="eyebrow">Chinese Reading Flow</div>
+                    <div class="title">{html_module.escape(meeting_name)}</div>
+                    <div class="subtitle">{html_module.escape(meeting_topic)}</div>
+                </div>
+                <div class="status-chip">{html_module.escape(status_metadata['label'])}</div>
+            </div>
+            <div class="feed" id="feed">{content_html}</div>
+        </div>
+        <script>
+            const feed = document.getElementById("feed");
+            if (feed) {{
+                requestAnimationFrame(() => {{
+                    feed.scrollTop = feed.scrollHeight;
+                }});
+                setTimeout(() => {{
+                    feed.scrollTop = feed.scrollHeight;
+                }}, 80);
+            }}
+        </script>
+    </body>
+    </html>
+    """
+    components.html(panel_html, height=TOP_PANEL_HEIGHT, scrolling=False)
 
 
 def create_live_transcript_file(meeting_name: str = "", meeting_topic: str = "") -> str:
@@ -919,56 +1748,17 @@ def main():
     # 側邊欄
     # ========================================================================
     with st.sidebar:
-        # 應用標題
-        st.markdown("""
-        <div style='margin-bottom: 2rem;'>
-            <h1 style='font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: -0.02em;'>
-                Meeting Translator
-            </h1>
-            <p style='font-size: 0.8125rem; color: var(--color-text-secondary); margin: 0.25rem 0 0 0;'>
-                Real-time AI Translation powered by OpenAI
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.divider()
-
-        # API Key 輸入
-        st.markdown("<h3>OpenAI API KEY</h3>", unsafe_allow_html=True)
-        api_key_input = st.text_input(
-            "API Key",
-            value=st.session_state.api_key,
-            type="password",
-            help="請到 https://platform.openai.com/api-keys 取得",
-            disabled=st.session_state.is_recording
-        )
-
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("💾 儲存", disabled=st.session_state.is_recording):
-                if api_key_input:
-                    config_manager.save_api_key(api_key_input)
-                    st.session_state.api_key = api_key_input
-                    st.success("API Key 已儲存")
-                else:
-                    st.error("請輸入 API Key")
-
-        with col2:
-            if st.button("🗑️ 清除", disabled=st.session_state.is_recording):
-                config_manager.clear_api_key()
-                st.session_state.api_key = ""
-                st.success("API Key 已清除")
-                st.rerun()
-
-        st.divider()
-
-        # 會議資訊
-        st.markdown("<h3>MEETING INFORMATION</h3>", unsafe_allow_html=True)
-
         # 讀取會議配置
         meeting_config = config_manager.get_meeting_config()
         meeting_names = meeting_config.get('meeting_names', [])
         meeting_topics = meeting_config.get('meeting_topics', [])
+
+        st.markdown("""
+        <div class='sidebar-brand'>
+            <div class='sidebar-kicker'>Meeting Context</div>
+            <div class='sidebar-title'>會議名稱與主題</div>
+        </div>
+        """, unsafe_allow_html=True)
 
         # 會議名稱
         meeting_name_options = meeting_names + ["+ 新增會議名稱"]
@@ -1022,10 +1812,17 @@ def main():
         else:
             st.session_state.meeting_topic = selected_meeting_topic
 
-        st.divider()
-
-        # 音訊設定
-        st.markdown("<h3>AUDIO SETTINGS</h3>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class='sidebar-note'>
+                <div class='sidebar-block-title'>Audio Settings</div>
+                <div class='sidebar-block-copy'>
+                    在這裡設定輸入來源、切片長度與靜音門檻。建議維持 BlackHole 與 5 到 10 秒的 chunk 長度。
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         # 列出音訊裝置
         devices = AudioRecorder.list_audio_devices()
@@ -1073,19 +1870,42 @@ def main():
 
         st.divider()
 
-        # 處理模式
-        st.markdown("<h3>TRANSLATION MODE</h3>", unsafe_allow_html=True)
+        # API Key 輸入
+        st.markdown("<div class='section-label'>OpenAI API Key</div>", unsafe_allow_html=True)
+        api_key_input = st.text_input(
+            "API Key",
+            value=st.session_state.api_key,
+            type="password",
+            help="請到 https://platform.openai.com/api-keys 取得",
+            disabled=st.session_state.is_recording
+        )
 
-        mode_options = {
-            "transcribe": "Transcribe (Japanese → Japanese)",
-            "translate": "Translate (Japanese → English)",
-            "translate_zh": "Translate (Japanese → Chinese)"
-        }
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 儲存", disabled=st.session_state.is_recording):
+                if api_key_input:
+                    config_manager.save_api_key(api_key_input)
+                    st.session_state.api_key = api_key_input
+                    st.success("API Key 已儲存")
+                else:
+                    st.error("請輸入 API Key")
+
+        with col2:
+            if st.button("🗑️ 清除", disabled=st.session_state.is_recording):
+                config_manager.clear_api_key()
+                st.session_state.api_key = ""
+                st.success("API Key 已清除")
+                st.rerun()
+
+        st.divider()
+
+        # 處理模式
+        st.markdown("<div class='section-label'>Translation Mode</div>", unsafe_allow_html=True)
 
         mode = st.radio(
             "選擇模式",
-            list(mode_options.keys()),
-            format_func=lambda x: mode_options[x],
+            list(MODE_OPTIONS.keys()),
+            format_func=lambda x: MODE_OPTIONS[x],
             index=2,  # 預設為 translate_zh（日語→中文）
             disabled=st.session_state.is_recording,
             key='mode'
@@ -1094,11 +1914,8 @@ def main():
         # 語言選擇
         language = st.selectbox(
             "Audio Language",
-            ["ja", "en", "zh", "ko", "es", "fr", "de"],
-            format_func=lambda x: {
-                "ja": "Japanese", "en": "English", "zh": "Chinese",
-                "ko": "Korean", "es": "Spanish", "fr": "French", "de": "German"
-            }.get(x, x),
+            list(LANGUAGE_OPTIONS.keys()),
+            format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
             disabled=st.session_state.is_recording or st.session_state.mode in ["translate", "translate_zh"],
             help="This option is disabled in translation mode",
             key='language'
@@ -1107,7 +1924,7 @@ def main():
         st.divider()
 
         # 顯示選項
-        st.markdown("<h3>DISPLAY OPTIONS</h3>", unsafe_allow_html=True)
+        st.markdown("<div class='section-label'>Display Options</div>", unsafe_allow_html=True)
 
         show_bilingual = st.checkbox(
             "Show multilingual comparison",
@@ -1121,12 +1938,21 @@ def main():
 
         # 錄音狀態資訊
         if st.session_state.is_recording and st.session_state.recorder:
-            st.markdown("<h3>RECORDING STATUS</h3>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Recording Status</div>", unsafe_allow_html=True)
             stats = st.session_state.recorder.get_recording_stats()
 
             st.metric("Duration", f"{stats['duration']:.1f}s")
             st.metric("File Size", f"{stats['file_size'] / 1024 / 1024:.2f} MB")
-            st.metric("Processed Chunks", stats['chunks_processed'])
+            st.metric("Captured Chunks", stats.get('chunks_captured', stats['chunks_processed']))
+            st.metric("Sent to API", stats['chunks_processed'])
+            st.metric("Silent Chunks", stats.get('chunks_skipped_silence', 0))
+            st.metric("Last RMS", f"{stats.get('last_rms', 0.0):.6f}")
+
+            if stats.get('chunks_captured', 0) > 0 and stats['chunks_processed'] == 0:
+                st.warning(
+                    "Audio is being captured, but every chunk is silent. "
+                    "This usually means BlackHole is selected but your macOS or meeting app output is not routed into it."
+                )
 
             if st.session_state.transcriber:
                 api_stats = st.session_state.transcriber.get_stats()
@@ -1149,7 +1975,7 @@ def main():
             error_messages.extend(st.session_state.controller.error_messages)
 
         if error_messages:
-            st.markdown("<h3>ERRORS</h3>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Errors</div>", unsafe_allow_html=True)
             error_container = st.container()
             with error_container:
                 for error in error_messages[-5:]:  # 只顯示最近 5 條
@@ -1199,57 +2025,105 @@ def main():
                 else:
                     st.warning("請填寫原文和中文翻譯")
 
+        if st.session_state.live_transcript_path and Path(st.session_state.live_transcript_path).exists():
+            st.divider()
+            st.markdown("<div class='section-label'>Live File</div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='sidebar-file-note'>{html_module.escape(st.session_state.live_transcript_path)}</div>",
+                unsafe_allow_html=True
+            )
+
     # ========================================================================
     # 主畫面
     # ========================================================================
+    transcripts = []
+    if st.session_state.controller:
+        transcripts = st.session_state.controller.transcripts
 
-    # 頁首 - 狀態指示器和控制面板
-    header_col1, header_col2 = st.columns([2, 1])
+    recording_stats = st.session_state.recorder.get_recording_stats() if st.session_state.recorder else {}
+    api_stats = st.session_state.transcriber.get_stats() if st.session_state.transcriber else {}
+    status_metadata = get_status_metadata()
+    chinese_feed_items = get_chinese_feed_items(transcripts)
+    status_badge_html = (
+        f"<div class='status-badge {status_metadata['css_class']}'>"
+        f"{status_metadata['icon_html']}"
+        f"<span>{html_module.escape(status_metadata['label'])}</span>"
+        "</div>"
+    )
 
-    with header_col1:
-        # 主標題
-        st.markdown("""
-        <div style='margin-bottom: 0.5rem;'>
-            <h1 style='font-size: 2rem; font-weight: 700; margin: 0; letter-spacing: -0.02em;'>
-                Live Transcription
-            </h1>
-        </div>
-        """, unsafe_allow_html=True)
+    current_mode = st.session_state.get('mode', 'translate_zh')
+    current_mode_label = MODE_OPTIONS.get(current_mode, current_mode)
+    current_language = st.session_state.get('language', 'ja')
+    current_language_label = LANGUAGE_OPTIONS.get(current_language, current_language.upper())
+    selected_device_label = st.session_state.get('selected_device', 'BlackHole 2ch')
+    meeting_name_display = st.session_state.meeting_name or "Untitled meeting"
+    meeting_topic_display = st.session_state.meeting_topic or "Topic not set"
+    transcript_count = len(transcripts)
+    chinese_line_count = len(chinese_feed_items)
+    latest_latency = f"{transcripts[-1]['latency']:.1f}s" if transcripts else "Waiting"
+    duration_value = f"{recording_stats.get('duration', 0.0):.1f}s"
+    cost_value = f"${api_stats.get('estimated_cost', 0.0):.4f}"
+    queue_value = (
+        f"{st.session_state.worker.get_queue_size()} queued"
+        if st.session_state.worker
+        else "Idle"
+    )
+    worker_value = (
+        "Running"
+        if st.session_state.worker and st.session_state.worker.is_running
+        else "Standby"
+    )
 
-    with header_col2:
-        # 狀態指示器
-        if st.session_state.is_recording:
-            if st.session_state.is_paused:
-                st.markdown("""
-                <div class='status-badge status-paused' style='float: right;'>
-                    <span style='font-size: 0.75rem;'>⏸</span>
-                    <span>Paused</span>
+    hero_col1, hero_col2 = st.columns([5, 1])
+
+    with hero_col1:
+        render_live_chinese_panel(
+            chinese_feed_items,
+            current_mode,
+            status_metadata,
+            meeting_name_display,
+            meeting_topic_display,
+            st.session_state.is_recording
+        )
+
+    with hero_col2:
+        st.markdown(
+            f"""
+            <div class='status-panel'>
+                <div class='status-panel-title'>Session status</div>
+                {status_badge_html}
+                <div class='status-panel-value'>{html_module.escape(status_metadata['label'])}</div>
+                <div class='status-panel-copy'>{html_module.escape(status_metadata['description'])}</div>
+                <div class='status-grid'>
+                    <div class='status-mini'>
+                        <div class='status-mini-label'>Latency</div>
+                        <div class='status-mini-value'>{html_module.escape(latest_latency)}</div>
+                    </div>
+                    <div class='status-mini'>
+                        <div class='status-mini-label'>Chinese Lines</div>
+                        <div class='status-mini-value'>{html_module.escape(str(chinese_line_count))}</div>
+                    </div>
+                    <div class='status-mini'>
+                        <div class='status-mini-label'>Worker</div>
+                        <div class='status-mini-value'>{html_module.escape(worker_value)}</div>
+                    </div>
                 </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown("""
-                <div class='status-badge status-recording' style='float: right;'>
-                    <span class='recording-indicator'></span>
-                    <span>Recording</span>
-                </div>
-                """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class='status-badge status-stopped' style='float: right;'>
-                <span style='font-size: 0.75rem;'>⏹</span>
-                <span>Stopped</span>
             </div>
-            """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True
+        )
 
-    # 控制按鈕
-    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='control-caption'>Quick Controls</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='control-note'>開始與停止按鍵已加重。開始時立刻建立新 session，停止時立即結束本輪錄音與翻譯。</div>",
+        unsafe_allow_html=True
+    )
 
-    col1, col2, col3, col_spacer = st.columns([1.2, 1, 1, 4])
+    col1, col2, col3, col_spacer = st.columns([2.1, 1.15, 2.1, 2.65])
 
     with col1:
-        start_button_type = "secondary" if st.session_state.is_recording else "primary"
         if st.button(
-            "▶ Start Recording" if not st.session_state.is_recording else "● Recording...",
+            "▶ Start Recording Now" if not st.session_state.is_recording else "● Recording In Progress",
             disabled=st.session_state.is_recording,
             use_container_width=True,
             type="primary"
@@ -1268,183 +2142,76 @@ def main():
                 st.rerun()
 
     with col3:
-        if st.button("⏹ Stop", disabled=not st.session_state.is_recording, use_container_width=True, type="secondary"):
+        if st.button(
+            "■ Stop Session",
+            disabled=not st.session_state.is_recording,
+            use_container_width=True,
+            type="primary" if st.session_state.is_recording else "secondary"
+        ):
             stop_recording()
             st.rerun()
 
-    st.markdown("<div style='height: 2rem; border-bottom: 1px solid var(--color-bg-tertiary);'></div>", unsafe_allow_html=True)
+    st.markdown("<div class='control-caption'>Session Snapshot</div>", unsafe_allow_html=True)
+    metric_cols = st.columns(4)
+    with metric_cols[0]:
+        render_metric_card("Mode", current_mode_label, MODE_SUMMARIES.get(current_mode, "Live audio processing session."), "accent-primary")
+    with metric_cols[1]:
+        render_metric_card("Audio Input", selected_device_label, f"Monitoring {current_language_label} speech, queue {queue_value}", "accent-secondary")
+    with metric_cols[2]:
+        render_metric_card("Transcript Lines", str(transcript_count), f"Chinese feed has {chinese_line_count} lines", "accent-warm")
+    with metric_cols[3]:
+        render_metric_card("Estimated Cost", cost_value, f"{api_stats.get('total_calls', 0)} Whisper calls over {duration_value}", "accent-neutral")
 
-    # 顯示逐字稿
-    st.markdown("""
-    <div style='margin: 2rem 0 1rem 0;'>
-        <h2 style='font-size: 1.25rem; font-weight: 600; margin: 0;'>
-            Transcription Results
-        </h2>
-        <p style='font-size: 0.875rem; color: var(--color-text-secondary); margin: 0.25rem 0 0 0;'>
-            Real-time translation powered by Whisper AI and GPT
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 從 controller 獲取逐字稿（如果正在錄音）
-    transcripts = []
-    if st.session_state.controller:
-        transcripts = st.session_state.controller.transcripts
+    live_chip = "<div class='section-chip'>Newest detailed card stays at the top</div>"
+    st.markdown(
+        f"""
+        <div class='section-head'>
+            <div>
+                <div class='section-title'>Transcription Results</div>
+                <div class='section-copy'>
+                    Detailed multilingual cards remain below. The reading panel above keeps the Chinese flow in speaking order from top to bottom.
+                </div>
+            </div>
+            {live_chip}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     if transcripts:
-        # 創建一個容器來顯示逐字稿（最新的在最上面）
         for item in transcripts[::-1]:
-            timestamp_str = item['timestamp'].strftime('%H:%M:%S')
-            text = item['text']
-            texts = item.get('texts', {})
-            latency = item['latency']
-            mode = item['mode']
-            language = item.get('language', 'ja')
-
-            # 雙語/多語言顯示
-            if st.session_state.show_bilingual and texts:
-                # 構建多語言顯示卡片
-                card_header = f"""
-                <div class='transcript-card'>
-                    <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;'>
-                        <span class='timestamp'>{timestamp_str}</span>
-                        <span class='latency'>{latency}s</span>
-                    </div>
-                """
-
-                card_body = ""
-
-                if mode == "transcribe":
-                    # 單語模式
-                    original_text = texts.get('original', text)
-                    original_text_escaped = html_module.escape(original_text)
-                    card_body += f"""
-                    <div style='margin-bottom: 0.75rem;'>
-                        <div class='language-label' style='color: var(--color-text-tertiary);'>
-                            <span>●</span> ORIGINAL
-                        </div>
-                        <div style='color: var(--color-text-primary); line-height: 1.7;'>
-                            {original_text_escaped}
-                        </div>
-                    </div>
-                    """
-
-                elif mode == "translate":
-                    # 雙語：日語 + 英文
-                    ja_text = texts.get('ja', '')
-                    en_text = texts.get('en', text)
-
-                    if ja_text:
-                        ja_text_escaped = html_module.escape(ja_text)
-                        card_body += f"""
-                        <div class='japanese-text' style='margin-bottom: 0.75rem;'>
-                            <div class='language-label' style='color: #007aff;'>
-                                <span>●</span> JAPANESE
-                            </div>
-                            <div>{ja_text_escaped}</div>
-                        </div>
-                        """
-
-                    if en_text:
-                        en_text_escaped = html_module.escape(en_text)
-                        card_body += f"""
-                        <div class='english-text'>
-                            <div class='language-label' style='color: #34c759;'>
-                                <span>●</span> ENGLISH
-                            </div>
-                            <div>{en_text_escaped}</div>
-                        </div>
-                        """
-
-                elif mode == "translate_zh":
-                    # 三語：日語 + 英文 + 中文
-                    ja_text = texts.get('ja', '')
-                    en_text = texts.get('en', '')
-                    zh_text = texts.get('zh', text)
-
-                    if ja_text:
-                        ja_text_escaped = html_module.escape(ja_text)
-                        card_body += f"""
-                        <div class='japanese-text' style='margin-bottom: 0.75rem;'>
-                            <div class='language-label' style='color: #007aff;'>
-                                <span>●</span> JAPANESE
-                            </div>
-                            <div>{ja_text_escaped}</div>
-                        </div>
-                        """
-
-                    if en_text:
-                        en_text_escaped = html_module.escape(en_text)
-                        card_body += f"""
-                        <div class='english-text' style='margin-bottom: 0.75rem;'>
-                            <div class='language-label' style='color: #34c759;'>
-                                <span>●</span> ENGLISH
-                            </div>
-                            <div>{en_text_escaped}</div>
-                        </div>
-                        """
-
-                    if zh_text:
-                        zh_text_escaped = html_module.escape(zh_text)
-                        card_body += f"""
-                        <div class='chinese-text'>
-                            <div class='language-label' style='color: #ff9500;'>
-                                <span>●</span> CHINESE
-                            </div>
-                            <div>{zh_text_escaped}</div>
-                        </div>
-                        """
-
-                card_footer = "</div>"
-
-                st.markdown(card_header + card_body + card_footer, unsafe_allow_html=True)
-
-            else:
-                # 單語顯示
-                # 根據語言選擇樣式
-                if language == "zh":
-                    lang_label = "CHINESE"
-                    lang_color = "#ff9500"
-                elif language == "en":
-                    lang_label = "ENGLISH"
-                    lang_color = "#34c759"
-                else:
-                    lang_label = "JAPANESE"
-                    lang_color = "#007aff"
-
-                # Escape HTML 特殊字符
-                text_escaped = html_module.escape(text)
-
-                st.markdown(
-                    f"""
-                    <div class='transcript-card'>
-                        <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;'>
-                            <span class='timestamp'>{timestamp_str}</span>
-                            <span class='latency'>{latency}s</span>
-                        </div>
-                        <div class='language-label' style='color: {lang_color};'>
-                            <span>●</span> {lang_label}
-                        </div>
-                        <div style='color: var(--color-text-primary); line-height: 1.7; margin-top: 0.5rem;'>
-                            {text_escaped}
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
+            render_transcript_card(item, st.session_state.show_bilingual)
     else:
-        st.markdown("""
-        <div style='text-align: center; padding: 4rem 2rem; color: var(--color-text-tertiary);'>
-            <div style='font-size: 3rem; margin-bottom: 1rem; opacity: 0.3;'>🎙</div>
-            <div style='font-size: 1rem; font-weight: 500;'>No transcription yet</div>
-            <div style='font-size: 0.875rem; margin-top: 0.5rem;'>Click "Start Recording" to begin</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div class='empty-state'>
+                <div class='empty-icon'>🎙</div>
+                <div class='empty-title'>No transcription yet</div>
+                <div class='empty-copy'>
+                    Start recording when the meeting begins. Japanese, English, and Chinese lines will appear here with timestamps and latency.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     # 停止後顯示下載按鈕
     if not st.session_state.is_recording and transcripts:
         st.divider()
+        st.markdown(
+            """
+            <div class='section-head'>
+                <div>
+                    <div class='section-title'>Exports</div>
+                    <div class='section-copy'>
+                        Save the cleaned transcript or download the recorded meeting audio after the session ends.
+                    </div>
+                </div>
+                <div class='section-chip'>Ready to download</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         # 顯示即時逐字稿檔案位置
         if st.session_state.live_transcript_path and Path(st.session_state.live_transcript_path).exists():
@@ -1454,7 +2221,7 @@ def main():
 
         with col1:
             # 下載逐字稿（支援語言選擇）
-            st.markdown("<h3>DOWNLOAD TRANSCRIPT</h3>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Download Transcript</div>", unsafe_allow_html=True)
 
             language_options = {
                 "all": "All Languages (JA + EN + ZH)",
@@ -1490,7 +2257,7 @@ def main():
 
         with col2:
             # 下載錄音
-            st.markdown("<h3>DOWNLOAD AUDIO</h3>", unsafe_allow_html=True)
+            st.markdown("<div class='section-label'>Download Audio</div>", unsafe_allow_html=True)
             if st.session_state.recorder:
                 stats = st.session_state.recorder.get_recording_stats()
                 recording_file = stats.get('file_path')
