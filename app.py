@@ -98,6 +98,8 @@ def init_session_state():
         st.session_state.meeting_name = ""
     if 'meeting_topic' not in st.session_state:
         st.session_state.meeting_topic = ""
+    if 'live_transcript_path' not in st.session_state:
+        st.session_state.live_transcript_path = None
 
 
 def add_debug_log(message: str):
@@ -121,7 +123,81 @@ def add_error_message(message: str):
     print(f"ERROR: {error_entry}")  # 輸出到 Terminal
 
 
-def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_topic: str = "") -> str:
+def create_live_transcript_file(meeting_name: str = "", meeting_topic: str = "") -> str:
+    """
+    創建即時逐字稿檔案（錄音開始時調用）
+
+    Args:
+        meeting_name: 會議名稱
+        meeting_topic: 會議主題
+
+    Returns:
+        檔案路徑
+    """
+    transcripts_dir = Path("transcripts")
+    transcripts_dir.mkdir(exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # 構建檔案名稱
+    filename_parts = ["live_transcript"]
+    if meeting_name:
+        safe_meeting_name = meeting_name.replace("/", "-").replace("\\", "-").replace(":", "-")
+        filename_parts.append(safe_meeting_name)
+    if meeting_topic:
+        safe_meeting_topic = meeting_topic.replace("/", "-").replace("\\", "-").replace(":", "-")
+        filename_parts.append(safe_meeting_topic)
+    filename_parts.append(timestamp)
+
+    filename = "_".join(filename_parts) + ".txt"
+    file_path = transcripts_dir / filename
+
+    # 寫入標題
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write("=" * 60 + "\n")
+        f.write("即時會議逐字稿\n")
+        if meeting_name:
+            f.write(f"會議名稱：{meeting_name}\n")
+        if meeting_topic:
+            f.write(f"會議主題：{meeting_topic}\n")
+        f.write(f"開始時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("=" * 60 + "\n\n")
+
+    return str(file_path)
+
+
+def append_to_live_transcript(file_path: str, item: dict):
+    """
+    追加內容到即時逐字稿檔案
+
+    Args:
+        file_path: 檔案路徑
+        item: 辨識結果字典
+    """
+    if not file_path or not Path(file_path).exists():
+        return
+
+    with open(file_path, 'a', encoding='utf-8') as f:
+        f.write(f"[{item['timestamp'].strftime('%H:%M:%S')}]")
+        f.write(f" (延遲：{item['latency']}秒)\n")
+
+        texts = item.get('texts', {})
+
+        # 總是寫入全部語言（即時記錄）
+        if texts.get('ja'):
+            f.write(f"📝 日語：{texts['ja']}\n")
+        if texts.get('en'):
+            f.write(f"🌐 英文：{texts['en']}\n")
+        if texts.get('zh'):
+            f.write(f"🈯 中文：{texts['zh']}\n")
+        # 如果沒有 texts，使用 text
+        if not texts:
+            f.write(f"{item['text']}\n")
+
+        f.write("-" * 60 + "\n\n")
+
+
+def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_topic: str = "", language_selection: str = "all") -> str:
     """
     將逐字稿儲存為文字檔
 
@@ -129,6 +205,7 @@ def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_t
         transcripts: 逐字稿列表
         meeting_name: 會議名稱
         meeting_topic: 會議主題
+        language_selection: 語言選擇 ("ja", "en", "zh", "all")
 
     Returns:
         檔案路徑
@@ -154,13 +231,46 @@ def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_t
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write("=" * 60 + "\n")
         f.write("會議逐字稿\n")
+        if meeting_name:
+            f.write(f"會議名稱：{meeting_name}\n")
+        if meeting_topic:
+            f.write(f"會議主題：{meeting_topic}\n")
         f.write(f"產生時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("=" * 60 + "\n\n")
 
         for item in reversed(transcripts):
-            f.write(f"[{item['timestamp'].strftime('%H:%M:%S')}]\n")
-            f.write(f"{item['text']}\n")
-            f.write(f"(延遲：{item['latency']}秒，模式：{item['mode']})\n")
+            f.write(f"[{item['timestamp'].strftime('%H:%M:%S')}]")
+            f.write(f" (延遲：{item['latency']}秒)\n")
+
+            texts = item.get('texts', {})
+
+            if language_selection == "all":
+                # 全部語言
+                if texts.get('ja'):
+                    f.write(f"📝 日語：{texts['ja']}\n")
+                if texts.get('en'):
+                    f.write(f"🌐 英文：{texts['en']}\n")
+                if texts.get('zh'):
+                    f.write(f"🈯 中文：{texts['zh']}\n")
+                # 如果沒有 texts，使用 text
+                if not texts:
+                    f.write(f"{item['text']}\n")
+            elif language_selection == "ja":
+                # 只有日文
+                text_to_write = texts.get('ja') or (item['text'] if item.get('mode') == 'transcribe' else '')
+                if text_to_write:
+                    f.write(f"{text_to_write}\n")
+            elif language_selection == "en":
+                # 只有英文
+                text_to_write = texts.get('en') or (item['text'] if item.get('mode') == 'translate' else '')
+                if text_to_write:
+                    f.write(f"{text_to_write}\n")
+            elif language_selection == "zh":
+                # 只有中文
+                text_to_write = texts.get('zh') or (item['text'] if item.get('mode') == 'translate_zh' else '')
+                if text_to_write:
+                    f.write(f"{text_to_write}\n")
+
             f.write("-" * 60 + "\n\n")
 
     return str(file_path)
@@ -177,6 +287,11 @@ class ProcessingController:
         self.transcripts = []
         self.error_messages = []
         self.thread = None
+        self.live_transcript_path = None  # 即時逐字稿檔案路徑
+
+    def set_live_transcript_path(self, path: str):
+        """設定即時逐字稿檔案路徑"""
+        self.live_transcript_path = path
 
     def start(self):
         """啟動處理執行緒"""
@@ -226,6 +341,11 @@ class ProcessingController:
                             # 添加到逐字稿列表
                             self.transcripts.append(result)
                             print(f"✅ 辨識完成：{result['text'][:50]}...")
+
+                            # 即時追加到檔案
+                            if self.live_transcript_path:
+                                append_to_live_transcript(self.live_transcript_path, result)
+                                print(f"📝 已追加到即時逐字稿：{self.live_transcript_path}")
                         else:
                             # 處理失敗
                             error_msg = result.get('error', '未知錯誤')
@@ -324,6 +444,17 @@ def start_recording():
             st.session_state.recorder,
             st.session_state.worker
         )
+
+        # 創建即時逐字稿檔案
+        add_debug_log("📝 正在創建即時逐字稿檔案...")
+        live_transcript_path = create_live_transcript_file(
+            meeting_name=st.session_state.meeting_name,
+            meeting_topic=st.session_state.meeting_topic
+        )
+        st.session_state.controller.set_live_transcript_path(live_transcript_path)
+        st.session_state.live_transcript_path = live_transcript_path
+        add_debug_log(f"✅ 即時逐字稿檔案已創建：{live_transcript_path}")
+
         st.session_state.controller.start()
         add_debug_log("✅ 處理控制器已啟動")
 
@@ -512,7 +643,7 @@ def main():
             "音訊片段長度（秒）",
             min_value=3,
             max_value=15,
-            value=5,
+            value=10,
             disabled=st.session_state.is_recording,
             key='chunk_duration'
         )
@@ -545,6 +676,7 @@ def main():
             "選擇模式",
             list(mode_options.keys()),
             format_func=lambda x: mode_options[x],
+            index=2,  # 預設為 translate_zh（日語→中文）
             disabled=st.session_state.is_recording,
             key='mode'
         )
@@ -775,15 +907,37 @@ def main():
     # 停止後顯示下載按鈕
     if not st.session_state.is_recording and transcripts:
         st.divider()
+
+        # 顯示即時逐字稿檔案位置
+        if st.session_state.live_transcript_path and Path(st.session_state.live_transcript_path).exists():
+            st.info(f"📝 即時逐字稿已自動記錄：`{st.session_state.live_transcript_path}`")
+
         col1, col2 = st.columns(2)
 
         with col1:
-            # 下載逐字稿
-            if st.button("📥 下載逐字稿", use_container_width=True):
+            # 下載逐字稿（支援語言選擇）
+            st.subheader("📥 下載逐字稿")
+
+            language_options = {
+                "all": "🌐 全部語言（日文+英文+中文）",
+                "ja": "📝 僅日文",
+                "en": "🌐 僅英文",
+                "zh": "🈯 僅中文"
+            }
+
+            selected_language = st.selectbox(
+                "選擇下載語言",
+                list(language_options.keys()),
+                format_func=lambda x: language_options[x],
+                key='download_language_selection'
+            )
+
+            if st.button("📥 產生下載檔案", use_container_width=True):
                 file_path = save_transcript_to_file(
                     transcripts,
                     meeting_name=st.session_state.meeting_name,
-                    meeting_topic=st.session_state.meeting_topic
+                    meeting_topic=st.session_state.meeting_topic,
+                    language_selection=selected_language
                 )
                 with open(file_path, 'r', encoding='utf-8') as f:
                     transcript_content = f.read()
@@ -798,19 +952,26 @@ def main():
 
         with col2:
             # 下載錄音
+            st.subheader("📥 下載錄音")
             if st.session_state.recorder:
                 stats = st.session_state.recorder.get_recording_stats()
                 recording_file = stats.get('file_path')
                 if recording_file and Path(recording_file).exists():
+                    file_size_mb = Path(recording_file).stat().st_size / 1024 / 1024
+                    st.caption(f"檔案大小：{file_size_mb:.2f} MB")
                     with open(recording_file, 'rb') as f:
                         audio_data = f.read()
                     st.download_button(
-                        label="📥 下載錄音",
+                        label="📥 下載 WAV 錄音",
                         data=audio_data,
                         file_name=Path(recording_file).name,
                         mime="audio/wav",
                         use_container_width=True
                     )
+                else:
+                    st.info("無錄音檔案")
+            else:
+                st.info("無錄音檔案")
 
     # 自動重新整理（錄音中時）
     if st.session_state.is_recording:
