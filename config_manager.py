@@ -5,7 +5,7 @@
 """
 
 import json
-import os
+import copy
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -15,20 +15,45 @@ class ConfigManager:
 
     def __init__(self):
         """初始化配置管理器"""
+        self.repo_dir = Path(__file__).resolve().parent
+        self.defaults_dir = self.repo_dir / "defaults"
+
         # 配置目錄：~/.meeting-translator/
         self.config_dir = Path.home() / ".meeting-translator"
         self.config_file = self.config_dir / "config.json"
         self.meeting_config_file = self.config_dir / "meeting_config.json"
         self.terminology_file = self.config_dir / "terminology.json"
+        self.default_config_file = self.defaults_dir / "config.json"
+        self.default_meeting_config_file = self.defaults_dir / "meeting_config.json"
+        self.default_terminology_file = self.defaults_dir / "terminology.json"
 
-        # 確保配置目錄存在
+    def _ensure_config_dir(self):
+        """在需要寫入本機設定時建立目錄"""
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
-        # 初始化會議配置檔案
-        self._init_meeting_config()
+    def _load_json_file(self, file_path: Path) -> Optional[Dict[str, Any]]:
+        """讀取 JSON 檔案，失敗時回傳 None"""
+        if not file_path.exists():
+            return None
 
-        # 初始化術語詞典
-        self._init_terminology()
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"讀取設定檔失敗 {file_path}: {e}")
+            return None
+
+    def _load_local_or_default(self, local_path: Path, default_path: Path, fallback: Dict[str, Any]) -> Dict[str, Any]:
+        """優先讀本機檔案，若不存在則退回 repo 內建 defaults"""
+        local_data = self._load_json_file(local_path)
+        if local_data is not None:
+            return local_data
+
+        default_data = self._load_json_file(default_path)
+        if default_data is not None:
+            return default_data
+
+        return copy.deepcopy(fallback)
 
     def load_config(self) -> Dict[str, Any]:
         """
@@ -37,15 +62,7 @@ class ConfigManager:
         Returns:
             配置字典，如果檔案不存在則返回空字典
         """
-        if not self.config_file.exists():
-            return {}
-
-        try:
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"讀取配置檔案失敗：{e}")
-            return {}
+        return self._load_local_or_default(self.config_file, self.default_config_file, {})
 
     def save_config(self, config: Dict[str, Any]) -> bool:
         """
@@ -58,6 +75,7 @@ class ConfigManager:
             儲存成功返回 True，失敗返回 False
         """
         try:
+            self._ensure_config_dir()
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             return True
@@ -135,27 +153,6 @@ class ConfigManager:
     # 會議配置管理
     # ========================================================================
 
-    def _init_meeting_config(self):
-        """初始化會議配置檔案（如果不存在則建立預設配置）"""
-        if not self.meeting_config_file.exists():
-            default_config = {
-                "meeting_names": [
-                    "eFlash IP 設計及半導體製程開發公司，每週例會",
-                    "eFlash IP 設計及半導體製程開發公司，專案進度會議",
-                    "eFlash IP 設計及半導體製程開發公司，技術討論會"
-                ],
-                "meeting_topics": [
-                    "專案管理",
-                    "技術開發",
-                    "半導體製程開發、IC設計、故障分析"
-                ]
-            }
-            try:
-                with open(self.meeting_config_file, 'w', encoding='utf-8') as f:
-                    json.dump(default_config, f, ensure_ascii=False, indent=2)
-            except IOError:
-                pass
-
     def get_meeting_config(self) -> Dict:
         """
         讀取會議配置
@@ -163,14 +160,11 @@ class ConfigManager:
         Returns:
             會議配置字典
         """
-        if not self.meeting_config_file.exists():
-            self._init_meeting_config()
-
-        try:
-            with open(self.meeting_config_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            return {"meeting_names": [], "meeting_topics": []}
+        return self._load_local_or_default(
+            self.meeting_config_file,
+            self.default_meeting_config_file,
+            {"meeting_names": [], "meeting_topics": []}
+        )
 
     def add_meeting_name(self, name: str) -> bool:
         """
@@ -186,6 +180,7 @@ class ConfigManager:
         if name and name not in config.get('meeting_names', []):
             config.setdefault('meeting_names', []).append(name)
             try:
+                self._ensure_config_dir()
                 with open(self.meeting_config_file, 'w', encoding='utf-8') as f:
                     json.dump(config, f, ensure_ascii=False, indent=2)
                 return True
@@ -207,6 +202,7 @@ class ConfigManager:
         if topic and topic not in config.get('meeting_topics', []):
             config.setdefault('meeting_topics', []).append(topic)
             try:
+                self._ensure_config_dir()
                 with open(self.meeting_config_file, 'w', encoding='utf-8') as f:
                     json.dump(config, f, ensure_ascii=False, indent=2)
                 return True
@@ -218,29 +214,6 @@ class ConfigManager:
     # 術語詞典管理
     # ========================================================================
 
-    def _init_terminology(self):
-        """初始化術語詞典（如果不存在則建立預設範例）"""
-        if not self.terminology_file.exists():
-            default_terminology = {
-                "terms": {
-                    "project": "專案",
-                    "task": "任務",
-                    "deadline": "截止日期",
-                    "review": "審查",
-                    "wafer": "晶圓",
-                    "process": "製程",
-                    "yield": "良率",
-                    "defect": "缺陷",
-                    "failure analysis": "故障分析",
-                    "semiconductor": "半導體"
-                }
-            }
-            try:
-                with open(self.terminology_file, 'w', encoding='utf-8') as f:
-                    json.dump(default_terminology, f, ensure_ascii=False, indent=2)
-            except IOError:
-                pass
-
     def get_terminology(self) -> Dict[str, str]:
         """
         讀取術語詞典
@@ -248,15 +221,12 @@ class ConfigManager:
         Returns:
             術語詞典 {日語: 中文}
         """
-        if not self.terminology_file.exists():
-            self._init_terminology()
-
-        try:
-            with open(self.terminology_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get('terms', {})
-        except (json.JSONDecodeError, IOError):
-            return {}
+        data = self._load_local_or_default(
+            self.terminology_file,
+            self.default_terminology_file,
+            {"terms": {}}
+        )
+        return data.get('terms', {})
 
     def add_term(self, source: str, target: str) -> bool:
         """
@@ -273,6 +243,7 @@ class ConfigManager:
         terms[source] = target
 
         try:
+            self._ensure_config_dir()
             with open(self.terminology_file, 'w', encoding='utf-8') as f:
                 json.dump({"terms": terms}, f, ensure_ascii=False, indent=2)
             return True
@@ -293,6 +264,7 @@ class ConfigManager:
         if source in terms:
             del terms[source]
             try:
+                self._ensure_config_dir()
                 with open(self.terminology_file, 'w', encoding='utf-8') as f:
                     json.dump({"terms": terms}, f, ensure_ascii=False, indent=2)
                 return True

@@ -1,0 +1,14 @@
+{
+  "terms": {
+    "project": "專案",
+    "task": "任務",
+    "deadline": "截止日期",
+    "review": "審查",
+    "wafer": "晶圓",
+    "process": "製程",
+    "yield": "良率",
+    "defect": "缺陷",
+    "failure analysis": "故障分析",
+    "semiconductor": "半導體"
+  }
+}

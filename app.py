@@ -929,13 +929,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
-MODE_OPTIONS = {
-    "transcribe": "Transcribe (Japanese to Japanese)",
-    "translate": "Translate (Japanese to English)",
-    "translate_zh": "Translate (Japanese to Chinese)"
-}
-
 LANGUAGE_OPTIONS = {
     "ja": "Japanese",
     "en": "English",
@@ -946,10 +939,26 @@ LANGUAGE_OPTIONS = {
     "de": "German"
 }
 
-MODE_SUMMARIES = {
-    "transcribe": "Verbatim Japanese transcript with no translation layer.",
-    "translate": "Dual-language capture for Japanese and English.",
-    "translate_zh": "Three-step pipeline for Japanese, English, and Chinese."
+LANGUAGE_FILE_LABELS = {
+    "ja": "日語",
+    "en": "英文",
+    "zh": "中文",
+    "ko": "韓文",
+    "es": "西班牙文",
+    "fr": "法文",
+    "de": "德文"
+}
+
+LANGUAGE_TONE_CLASSES = {
+    "ja": "tone-ja",
+    "en": "tone-en",
+    "zh": "tone-zh"
+}
+
+MODE_ORDER = ("transcribe", "translate_en", "translate_target")
+LEGACY_MODE_ALIASES = {
+    "translate": "translate_en",
+    "translate_zh": "translate_target"
 }
 
 TOP_PANEL_HEIGHT = 500
@@ -976,13 +985,107 @@ def init_session_state():
     if 'error_messages' not in st.session_state:
         st.session_state.error_messages = []
     if 'show_bilingual' not in st.session_state:
-        st.session_state.show_bilingual = True  # 預設顯示雙語
+        st.session_state.show_bilingual = config_manager.get_setting('show_bilingual', True)
     if 'meeting_name' not in st.session_state:
         st.session_state.meeting_name = ""
     if 'meeting_topic' not in st.session_state:
         st.session_state.meeting_topic = ""
     if 'live_transcript_path' not in st.session_state:
         st.session_state.live_transcript_path = None
+    if 'language' not in st.session_state:
+        st.session_state.language = config_manager.get_setting('language', "ja")
+    if 'target_language' not in st.session_state:
+        st.session_state.target_language = config_manager.get_setting('target_language', "zh")
+    if 'mode' not in st.session_state:
+        st.session_state.mode = config_manager.get_setting('mode', "translate_target")
+    if st.session_state.mode in LEGACY_MODE_ALIASES:
+        st.session_state.mode = LEGACY_MODE_ALIASES[st.session_state.mode]
+    if 'reading_flow_language' not in st.session_state:
+        st.session_state.reading_flow_language = st.session_state.target_language
+
+
+def normalize_mode(mode: str) -> str:
+    """將舊模式名稱轉成目前使用的模式名稱"""
+    return LEGACY_MODE_ALIASES.get(mode, mode)
+
+
+def get_language_label(language_code: str) -> str:
+    """回傳介面用語言名稱"""
+    return LANGUAGE_OPTIONS.get(language_code, language_code.upper())
+
+
+def get_file_language_label(language_code: str) -> str:
+    """回傳匯出檔案使用的語言名稱"""
+    return LANGUAGE_FILE_LABELS.get(language_code, language_code.upper())
+
+
+def get_language_tone(language_code: str) -> str:
+    """回傳語言卡片配色"""
+    return LANGUAGE_TONE_CLASSES.get(language_code, "tone-neutral")
+
+
+def get_mode_options(source_language: str, target_language: str) -> dict[str, str]:
+    """依來源語言建立可用模式與文案"""
+    source_label = get_language_label(source_language)
+    target_label = get_language_label(target_language)
+    options = {
+        "transcribe": f"Transcribe ({source_label})"
+    }
+    options["translate_en"] = f"Translate ({source_label} to English)"
+    options["translate_target"] = f"Translate ({source_label} to Native Language: {target_label})"
+    return options
+
+
+def get_mode_summary(mode: str, source_language: str, target_language: str) -> str:
+    """回傳模式摘要文案"""
+    source_label = get_language_label(source_language)
+    target_label = get_language_label(target_language)
+    if mode == "transcribe":
+        return f"Verbatim {source_label} transcript with no translation layer."
+    if mode == "translate_en":
+        return f"Capture {source_label} speech and render a live English translation."
+    return f"Capture {source_label} speech and render a live {target_label} translation."
+
+
+def get_default_mode(source_language: str, target_language: str) -> str:
+    """依來源語言選擇預設模式"""
+    if source_language != target_language:
+        return "translate_target"
+    if source_language != "en":
+        return "translate_en"
+    return "transcribe"
+
+
+def get_flow_language_options(mode: str, source_language: str, target_language: str) -> list[str]:
+    """依模式回傳可在閱讀流顯示的語言"""
+    mode = normalize_mode(mode)
+    languages = [source_language]
+
+    if mode == "translate_en":
+        languages.append("en")
+    elif mode == "translate_target":
+        languages.append("en")
+        languages.append(target_language)
+
+    unique_languages = []
+    for language in languages:
+        if language not in unique_languages:
+            unique_languages.append(language)
+
+    return unique_languages
+
+
+def get_default_flow_language(mode: str, source_language: str, target_language: str) -> str:
+    """依模式選擇閱讀流預設語言"""
+    options = get_flow_language_options(mode, source_language, target_language)
+    preferred = source_language
+
+    if mode == "translate_en" and "en" in options:
+        preferred = "en"
+    elif mode == "translate_target" and target_language in options:
+        preferred = target_language
+
+    return preferred if preferred in options else options[0]
 
 
 def add_debug_log(message: str):
@@ -1069,39 +1172,101 @@ def build_language_panel(label: str, text: str, tone_class: str) -> str:
     """
 
 
+def normalize_transcript_payload(item: dict) -> tuple[str, str | None, dict[str, str], str]:
+    """將逐字稿資料統一成以語言代碼為 key 的格式"""
+    mode = normalize_mode(item.get('mode', 'transcribe'))
+    raw_texts = item.get('texts', {}) or {}
+    texts = {code: value for code, value in raw_texts.items() if value}
+    source_language = item.get('source_language')
+    target_language = item.get('target_language')
+
+    if not source_language:
+        if mode == "transcribe":
+            source_language = item.get('language', 'ja')
+        elif 'ja' in texts:
+            source_language = 'ja'
+        elif 'en' in texts and 'zh' not in texts:
+            source_language = 'en'
+        elif 'zh' in texts and 'en' not in texts:
+            source_language = 'zh'
+        else:
+            source_language = item.get('language', 'ja')
+
+    if 'original' in texts and source_language not in texts:
+        texts[source_language] = texts['original']
+
+    if not texts and item.get('text'):
+        texts[item.get('language', source_language)] = item['text']
+
+    if not target_language and mode == "translate_target":
+        output_language = item.get('language')
+        if output_language and output_language != source_language:
+            target_language = output_language
+        else:
+            for language_code in texts.keys():
+                if language_code not in [source_language, 'en']:
+                    target_language = language_code
+                    break
+
+    return source_language, target_language, texts, mode
+
+
+def get_transcript_language_order(item: dict) -> list[str]:
+    """取得逐字稿卡片應顯示的語言順序"""
+    source_language, target_language, texts, mode = normalize_transcript_payload(item)
+    order = []
+
+    if texts.get(source_language):
+        order.append(source_language)
+
+    if mode in ["translate_en", "translate_target"] and texts.get('en') and 'en' not in order:
+        order.append('en')
+
+    if mode == "translate_target" and target_language and texts.get(target_language) and target_language not in order:
+        order.append(target_language)
+
+    if not order and item.get('language'):
+        order.append(item['language'])
+
+    return order
+
+
+def get_text_for_language(item: dict, language_code: str) -> str:
+    """依語言代碼從逐字稿取出文字"""
+    source_language, _, texts, _ = normalize_transcript_payload(item)
+
+    if language_code in texts:
+        return texts[language_code]
+    if language_code == source_language and item.get('text') and item.get('language') == source_language:
+        return item['text']
+    if item.get('language') == language_code:
+        return item.get('text', '')
+    return ""
+
+
 def render_transcript_card(item: dict, show_multilingual: bool):
     """渲染單一逐字稿卡片"""
     timestamp_str = item['timestamp'].strftime('%H:%M:%S')
     latency = item['latency']
-    text = item['text']
-    texts = item.get('texts', {})
-    mode = item['mode']
-    language = item.get('language', 'ja')
+    source_language, _, _, _ = normalize_transcript_payload(item)
+    panel_languages = get_transcript_language_order(item)
 
-    panels = []
+    if not show_multilingual:
+        output_language = item.get('language', source_language)
+        if output_language in panel_languages:
+            panel_languages = [output_language]
+        elif panel_languages:
+            panel_languages = [panel_languages[-1]]
 
-    if show_multilingual and texts:
-        if mode == "transcribe":
-            panels.append(build_language_panel("Original", texts.get('original', text), "tone-neutral"))
-        elif mode == "translate":
-            if texts.get('ja'):
-                panels.append(build_language_panel("Japanese", texts['ja'], "tone-ja"))
-            if texts.get('en') or text:
-                panels.append(build_language_panel("English", texts.get('en', text), "tone-en"))
-        else:
-            if texts.get('ja'):
-                panels.append(build_language_panel("Japanese", texts['ja'], "tone-ja"))
-            if texts.get('en'):
-                panels.append(build_language_panel("English", texts['en'], "tone-en"))
-            if texts.get('zh') or text:
-                panels.append(build_language_panel("Chinese", texts.get('zh', text), "tone-zh"))
-    else:
-        label_map = {
-            "zh": ("Chinese", "tone-zh"),
-            "en": ("English", "tone-en")
-        }
-        label, tone_class = label_map.get(language, ("Japanese", "tone-ja"))
-        panels.append(build_language_panel(label, text, tone_class))
+    panels = [
+        build_language_panel(
+            get_language_label(language_code),
+            get_text_for_language(item, language_code),
+            get_language_tone(language_code)
+        )
+        for language_code in panel_languages
+        if get_text_for_language(item, language_code)
+    ]
 
     st.markdown(
         f"""
@@ -1117,51 +1282,46 @@ def render_transcript_card(item: dict, show_multilingual: bool):
     )
 
 
-def get_chinese_feed_items(transcripts: list[dict]) -> list[dict]:
-    """取得依時間順序排列的中文結果"""
+def get_feed_items(transcripts: list[dict], language_code: str) -> list[dict]:
+    """取得依時間順序排列的閱讀流結果"""
     items = []
     for item in transcripts:
-        texts = item.get('texts', {})
-        chinese_text = texts.get('zh', '')
-        if not chinese_text and item.get('language') == 'zh':
-            chinese_text = item.get('text', '')
-
-        if chinese_text:
+        selected_text = get_text_for_language(item, language_code)
+        if selected_text:
             items.append({
                 "timestamp": item['timestamp'].strftime('%H:%M:%S'),
-                "text": chinese_text
+                "text": selected_text
             })
     return items
 
 
-def render_live_chinese_panel(
-    chinese_items: list[dict],
-    current_mode: str,
+def render_live_feed_panel(
+    feed_items: list[dict],
+    feed_language: str,
     status_metadata: dict,
     meeting_name: str,
     meeting_topic: str,
     is_recording: bool
 ):
-    """渲染上方中文閱讀流，保持最新內容可見"""
-    if chinese_items:
+    """渲染上方閱讀流，保持最新內容可見"""
+    flow_language_label = get_language_label(feed_language)
+
+    if feed_items:
         content_html = (
             "<div class='feed-stream'>"
             + "<br>".join(
                 html_module.escape(item['text']).replace("\n", "<br>")
-                for item in chinese_items
+                for item in feed_items
             )
             + "</div>"
         )
     else:
-        if current_mode != "translate_zh":
-            empty_title = "目前模式不輸出中文"
-            empty_copy = "切換到 Translate (Japanese to Chinese) 後，這裡會依照語音順序累積中文閱讀流。"
-        elif is_recording:
-            empty_title = "中文閱讀流已待命"
-            empty_copy = "正在等待第一段可翻譯內容。新內容會自動追加在下方，並保持最新段落可見。"
+        if is_recording:
+            empty_title = f"{flow_language_label} Reading Flow 已待命"
+            empty_copy = f"正在等待第一段可顯示的 {flow_language_label} 內容。新內容會自動追加在下方，並保持最新段落可見。"
         else:
             empty_title = "等待開始"
-            empty_copy = "開始錄音後，中文翻譯會從上到下按照發言順序串接，方便連續閱讀。"
+            empty_copy = f"開始錄音後，這裡會依照語音順序串接 {flow_language_label} 內容，方便連續閱讀。"
 
         content_html = f"""
         <div class="feed-empty">
@@ -1327,9 +1487,9 @@ def render_live_chinese_panel(
         <div class="panel">
             <div class="panel-head">
                 <div>
-                    <div class="eyebrow">Chinese Reading Flow</div>
+                    <div class="eyebrow">Reading Flow</div>
                     <div class="title">{html_module.escape(meeting_name)}</div>
-                    <div class="subtitle">{html_module.escape(meeting_topic)}</div>
+                    <div class="subtitle">{html_module.escape(meeting_topic)} · {html_module.escape(flow_language_label)}</div>
                 </div>
                 <div class="status-chip">{html_module.escape(status_metadata['label'])}</div>
             </div>
@@ -1410,18 +1570,10 @@ def append_to_live_transcript(file_path: str, item: dict):
         f.write(f"[{item['timestamp'].strftime('%H:%M:%S')}]")
         f.write(f" (延遲：{item['latency']}秒)\n")
 
-        texts = item.get('texts', {})
-
-        # 總是寫入全部語言（即時記錄）
-        if texts.get('ja'):
-            f.write(f"📝 日語：{texts['ja']}\n")
-        if texts.get('en'):
-            f.write(f"🌐 英文：{texts['en']}\n")
-        if texts.get('zh'):
-            f.write(f"🈯 中文：{texts['zh']}\n")
-        # 如果沒有 texts，使用 text
-        if not texts:
-            f.write(f"{item['text']}\n")
+        for language_code in get_transcript_language_order(item):
+            text = get_text_for_language(item, language_code)
+            if text:
+                f.write(f"{get_file_language_label(language_code)}：{text}\n")
 
         f.write("-" * 60 + "\n\n")
 
@@ -1471,32 +1623,13 @@ def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_t
             f.write(f"[{item['timestamp'].strftime('%H:%M:%S')}]")
             f.write(f" (延遲：{item['latency']}秒)\n")
 
-            texts = item.get('texts', {})
-
             if language_selection == "all":
-                # 全部語言
-                if texts.get('ja'):
-                    f.write(f"📝 日語：{texts['ja']}\n")
-                if texts.get('en'):
-                    f.write(f"🌐 英文：{texts['en']}\n")
-                if texts.get('zh'):
-                    f.write(f"🈯 中文：{texts['zh']}\n")
-                # 如果沒有 texts，使用 text
-                if not texts:
-                    f.write(f"{item['text']}\n")
-            elif language_selection == "ja":
-                # 只有日文
-                text_to_write = texts.get('ja') or (item['text'] if item.get('mode') == 'transcribe' else '')
-                if text_to_write:
-                    f.write(f"{text_to_write}\n")
-            elif language_selection == "en":
-                # 只有英文
-                text_to_write = texts.get('en') or (item['text'] if item.get('mode') == 'translate' else '')
-                if text_to_write:
-                    f.write(f"{text_to_write}\n")
-            elif language_selection == "zh":
-                # 只有中文
-                text_to_write = texts.get('zh') or (item['text'] if item.get('mode') == 'translate_zh' else '')
+                for language_code in get_transcript_language_order(item):
+                    text_to_write = get_text_for_language(item, language_code)
+                    if text_to_write:
+                        f.write(f"{get_file_language_label(language_code)}：{text_to_write}\n")
+            else:
+                text_to_write = get_text_for_language(item, language_selection)
                 if text_to_write:
                     f.write(f"{text_to_write}\n")
 
@@ -1635,16 +1768,20 @@ def start_recording():
 
         st.session_state.transcriber.set_mode(st.session_state.mode)
         st.session_state.transcriber.set_language(st.session_state.language)
-        add_debug_log(f"🌐 模式：{st.session_state.mode}，語言：{st.session_state.language}")
+        st.session_state.transcriber.set_target_language(st.session_state.target_language)
+        add_debug_log(
+            f"🌐 模式：{st.session_state.mode}，來源語言：{st.session_state.language}，母語：{st.session_state.target_language}"
+        )
 
         # 設定會議上下文（提高翻譯準確性）
-        if st.session_state.mode == "translate_zh":
-            terminology = config_manager.get_terminology()
-            st.session_state.transcriber.set_meeting_context(
-                meeting_topic=st.session_state.meeting_topic,
-                terminology=terminology
-            )
-            add_debug_log(f"📚 已載入會議上下文：主題={st.session_state.meeting_topic}，術語數={len(terminology)}")
+        terminology = config_manager.get_terminology() if st.session_state.target_language == "zh" else {}
+        st.session_state.transcriber.set_meeting_context(
+            meeting_topic=st.session_state.meeting_topic,
+            terminology=terminology
+        )
+        add_debug_log(
+            f"📚 已載入會議上下文：主題={st.session_state.meeting_topic}，術語數={len(terminology)}"
+        )
 
         # 初始化 Worker（每次都重新初始化以確保使用最新的 Transcriber）
         if st.session_state.worker is not None:
@@ -1829,13 +1966,20 @@ def main():
         device_names = [d['name'] for d in devices]
 
         # 預設選擇 BlackHole
+        preferred_device = config_manager.get_setting('selected_device', "BlackHole 2ch")
         default_device = "BlackHole 2ch"
         default_index = 0
         for i, name in enumerate(device_names):
-            if "blackhole" in name.lower():
+            if name == preferred_device:
                 default_index = i
                 default_device = name
                 break
+        else:
+            for i, name in enumerate(device_names):
+                if "blackhole" in name.lower():
+                    default_index = i
+                    default_device = name
+                    break
 
         selected_device = st.selectbox(
             "音訊輸入裝置",
@@ -1850,7 +1994,7 @@ def main():
             "音訊片段長度（秒）",
             min_value=3,
             max_value=15,
-            value=10,
+            value=int(config_manager.get_setting('chunk_duration', 10)),
             disabled=st.session_state.is_recording,
             key='chunk_duration'
         )
@@ -1860,7 +2004,7 @@ def main():
             "靜音閾值",
             min_value=0.0,
             max_value=0.1,
-            value=0.01,
+            value=float(config_manager.get_setting('silence_threshold', 0.01)),
             step=0.001,
             format="%.3f",
             disabled=st.session_state.is_recording,
@@ -1899,26 +2043,41 @@ def main():
 
         st.divider()
 
-        # 處理模式
-        st.markdown("<div class='section-label'>Translation Mode</div>", unsafe_allow_html=True)
-
-        mode = st.radio(
-            "選擇模式",
-            list(MODE_OPTIONS.keys()),
-            format_func=lambda x: MODE_OPTIONS[x],
-            index=2,  # 預設為 translate_zh（日語→中文）
-            disabled=st.session_state.is_recording,
-            key='mode'
-        )
-
         # 語言選擇
         language = st.selectbox(
             "Audio Language",
             list(LANGUAGE_OPTIONS.keys()),
             format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-            disabled=st.session_state.is_recording or st.session_state.mode in ["translate", "translate_zh"],
-            help="This option is disabled in translation mode",
+            disabled=st.session_state.is_recording,
+            help="Select the language spoken in the meeting. Translation targets update automatically.",
             key='language'
+        )
+
+        target_language = st.selectbox(
+            "Native Language",
+            list(LANGUAGE_OPTIONS.keys()),
+            format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
+            disabled=st.session_state.is_recording,
+            help="Choose the language you want as your personal translation output.",
+            key='target_language'
+        )
+
+        mode_options = get_mode_options(st.session_state.language, st.session_state.target_language)
+        mode_keys = list(mode_options.keys())
+        default_mode = get_default_mode(st.session_state.language, st.session_state.target_language)
+        current_mode = normalize_mode(st.session_state.get('mode', default_mode))
+        if current_mode not in mode_keys:
+            st.session_state.mode = default_mode if default_mode in mode_keys else mode_keys[0]
+
+        # 處理模式
+        st.markdown("<div class='section-label'>Translation Mode</div>", unsafe_allow_html=True)
+
+        mode = st.radio(
+            "選擇模式",
+            mode_keys,
+            format_func=lambda x: mode_options[x],
+            disabled=st.session_state.is_recording,
+            key='mode'
         )
 
         st.divider()
@@ -1930,7 +2089,7 @@ def main():
             "Show multilingual comparison",
             value=st.session_state.show_bilingual,
             disabled=st.session_state.is_recording,
-            help="Display original text + translations side by side",
+            help="Display source text and translated text side by side",
             key='show_bilingual'
         )
 
@@ -1959,7 +2118,7 @@ def main():
                 st.metric("API Calls", api_stats['total_calls'])
                 if api_stats.get('translation_calls', 0) > 0:
                     st.metric("Translations", api_stats['translation_calls'])
-                st.metric("Estimated Cost", f"${api_stats['estimated_cost']:.4f}")
+                st.metric("Whisper Cost", f"${api_stats['estimated_cost']:.4f}")
 
                 if st.session_state.worker:
                     queue_size = st.session_state.worker.get_queue_size()
@@ -1990,7 +2149,7 @@ def main():
         # 術語詞典管理（可展開）
         with st.expander("Terminology Dictionary", expanded=False):
             st.markdown("**Manage specialized terms and translations**")
-            st.info("Recommended: Use **English → Chinese** pairs (translation flow: JA→EN→ZH)")
+            st.info("Recommended: Use key terms in the source language or English. Current term dictionary is applied when Native Language is Chinese.")
 
             # 顯示現有術語
             terminology = config_manager.get_terminology()
@@ -2011,7 +2170,7 @@ def main():
             st.markdown("**添加新術語：**")
             col_new1, col_new2 = st.columns(2)
             with col_new1:
-                new_source = st.text_input("原文（英文或日文）", key="new_term_source", placeholder="例如：wafer")
+                new_source = st.text_input("原文（來源語言或英文）", key="new_term_source", placeholder="例如：wafer")
             with col_new2:
                 new_target = st.text_input("中文翻譯", key="new_term_target", placeholder="例如：晶圓")
 
@@ -2023,7 +2182,7 @@ def main():
                     else:
                         st.error("添加失敗")
                 else:
-                    st.warning("請填寫原文和中文翻譯")
+                    st.warning("請填寫原文和中文翻譯（此詞典目前只套用在中文母語輸出）")
 
         if st.session_state.live_transcript_path and Path(st.session_state.live_transcript_path).exists():
             st.divider()
@@ -2043,7 +2202,6 @@ def main():
     recording_stats = st.session_state.recorder.get_recording_stats() if st.session_state.recorder else {}
     api_stats = st.session_state.transcriber.get_stats() if st.session_state.transcriber else {}
     status_metadata = get_status_metadata()
-    chinese_feed_items = get_chinese_feed_items(transcripts)
     status_badge_html = (
         f"<div class='status-badge {status_metadata['css_class']}'>"
         f"{status_metadata['icon_html']}"
@@ -2051,15 +2209,25 @@ def main():
         "</div>"
     )
 
-    current_mode = st.session_state.get('mode', 'translate_zh')
-    current_mode_label = MODE_OPTIONS.get(current_mode, current_mode)
+    current_mode = normalize_mode(st.session_state.get('mode', 'translate_target'))
     current_language = st.session_state.get('language', 'ja')
-    current_language_label = LANGUAGE_OPTIONS.get(current_language, current_language.upper())
+    current_target_language = st.session_state.get('target_language', 'zh')
+    current_language_label = get_language_label(current_language)
+    current_target_language_label = get_language_label(current_target_language)
+    current_mode_options = get_mode_options(current_language, current_target_language)
+    current_mode_label = current_mode_options.get(current_mode, current_mode)
+    flow_language_options = get_flow_language_options(current_mode, current_language, current_target_language)
+    default_flow_language = get_default_flow_language(current_mode, current_language, current_target_language)
+    if st.session_state.reading_flow_language not in flow_language_options:
+        st.session_state.reading_flow_language = default_flow_language
+    selected_flow_language = st.session_state.reading_flow_language
+    selected_flow_label = get_language_label(selected_flow_language)
+    feed_items = get_feed_items(transcripts, selected_flow_language)
     selected_device_label = st.session_state.get('selected_device', 'BlackHole 2ch')
     meeting_name_display = st.session_state.meeting_name or "Untitled meeting"
     meeting_topic_display = st.session_state.meeting_topic or "Topic not set"
     transcript_count = len(transcripts)
-    chinese_line_count = len(chinese_feed_items)
+    reading_line_count = len(feed_items)
     latest_latency = f"{transcripts[-1]['latency']:.1f}s" if transcripts else "Waiting"
     duration_value = f"{recording_stats.get('duration', 0.0):.1f}s"
     cost_value = f"${api_stats.get('estimated_cost', 0.0):.4f}"
@@ -2074,12 +2242,23 @@ def main():
         else "Standby"
     )
 
+    flow_selector_col, flow_selector_spacer = st.columns([2.3, 3.7])
+    with flow_selector_col:
+        st.markdown("<div class='section-label'>Reading Flow Language</div>", unsafe_allow_html=True)
+        st.selectbox(
+            "Reading Flow Language",
+            flow_language_options,
+            format_func=get_language_label,
+            key='reading_flow_language',
+            label_visibility="collapsed"
+        )
+
     hero_col1, hero_col2 = st.columns([5, 1])
 
     with hero_col1:
-        render_live_chinese_panel(
-            chinese_feed_items,
-            current_mode,
+        render_live_feed_panel(
+            feed_items,
+            selected_flow_language,
             status_metadata,
             meeting_name_display,
             meeting_topic_display,
@@ -2100,8 +2279,8 @@ def main():
                         <div class='status-mini-value'>{html_module.escape(latest_latency)}</div>
                     </div>
                     <div class='status-mini'>
-                        <div class='status-mini-label'>Chinese Lines</div>
-                        <div class='status-mini-value'>{html_module.escape(str(chinese_line_count))}</div>
+                        <div class='status-mini-label'>Reading Lines</div>
+                        <div class='status-mini-value'>{html_module.escape(str(reading_line_count))}</div>
                     </div>
                     <div class='status-mini'>
                         <div class='status-mini-label'>Worker</div>
@@ -2154,13 +2333,23 @@ def main():
     st.markdown("<div class='control-caption'>Session Snapshot</div>", unsafe_allow_html=True)
     metric_cols = st.columns(4)
     with metric_cols[0]:
-        render_metric_card("Mode", current_mode_label, MODE_SUMMARIES.get(current_mode, "Live audio processing session."), "accent-primary")
+        render_metric_card("Mode", current_mode_label, get_mode_summary(current_mode, current_language, current_target_language), "accent-primary")
     with metric_cols[1]:
-        render_metric_card("Audio Input", selected_device_label, f"Monitoring {current_language_label} speech, queue {queue_value}", "accent-secondary")
+        render_metric_card(
+            "Audio Input",
+            selected_device_label,
+            f"Monitoring {current_language_label} speech, native output {current_target_language_label}, queue {queue_value}",
+            "accent-secondary"
+        )
     with metric_cols[2]:
-        render_metric_card("Transcript Lines", str(transcript_count), f"Chinese feed has {chinese_line_count} lines", "accent-warm")
+        render_metric_card("Transcript Lines", str(transcript_count), f"{selected_flow_label} reading flow has {reading_line_count} lines", "accent-warm")
     with metric_cols[3]:
-        render_metric_card("Estimated Cost", cost_value, f"{api_stats.get('total_calls', 0)} Whisper calls over {duration_value}", "accent-neutral")
+        render_metric_card(
+            "Whisper Cost",
+            cost_value,
+            f"{api_stats.get('total_calls', 0)} Whisper calls over {duration_value} · GPT {api_stats.get('translation_calls', 0)}x",
+            "accent-neutral"
+        )
 
     live_chip = "<div class='section-chip'>Newest detailed card stays at the top</div>"
     st.markdown(
@@ -2169,7 +2358,7 @@ def main():
             <div>
                 <div class='section-title'>Transcription Results</div>
                 <div class='section-copy'>
-                    Detailed multilingual cards remain below. The reading panel above keeps the Chinese flow in speaking order from top to bottom.
+                    Detailed multilingual cards remain below. The reading panel above keeps the {html_module.escape(selected_flow_label)} flow in speaking order from top to bottom.
                 </div>
             </div>
             {live_chip}
@@ -2188,7 +2377,7 @@ def main():
                 <div class='empty-icon'>🎙</div>
                 <div class='empty-title'>No transcription yet</div>
                 <div class='empty-copy'>
-                    Start recording when the meeting begins. Japanese, English, and Chinese lines will appear here with timestamps and latency.
+                    Start recording when the meeting begins. Source text and any enabled translations will appear here with timestamps and latency.
                 </div>
             </div>
             """,
@@ -2223,12 +2412,18 @@ def main():
             # 下載逐字稿（支援語言選擇）
             st.markdown("<div class='section-label'>Download Transcript</div>", unsafe_allow_html=True)
 
+            available_export_languages = []
+            for item in transcripts:
+                for language_code in get_transcript_language_order(item):
+                    if language_code not in available_export_languages:
+                        available_export_languages.append(language_code)
+
+            language_summary = " + ".join(code.upper() for code in available_export_languages)
             language_options = {
-                "all": "All Languages (JA + EN + ZH)",
-                "ja": "Japanese Only",
-                "en": "English Only",
-                "zh": "Chinese Only"
+                "all": f"All Available ({language_summary})"
             }
+            for language_code in available_export_languages:
+                language_options[language_code] = f"{get_language_label(language_code)} Only"
 
             selected_language = st.selectbox(
                 "Select Language",

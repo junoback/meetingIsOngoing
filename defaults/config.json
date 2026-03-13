@@ -1,0 +1,9 @@
+{
+  "language": "ja",
+  "target_language": "zh",
+  "mode": "translate_target",
+  "show_bilingual": true,
+  "chunk_duration": 10,
+  "silence_threshold": 0.01,
+  "selected_device": "BlackHole 2ch"
+}

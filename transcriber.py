@@ -12,6 +12,17 @@ import threading
 import queue
 
 
+LANGUAGE_LABELS_ZH = {
+    "ja": "日語",
+    "en": "英文",
+    "zh": "中文",
+    "ko": "韓文",
+    "es": "西班牙文",
+    "fr": "法文",
+    "de": "德文"
+}
+
+
 class Transcriber:
     """語音轉文字處理器類別"""
 
@@ -27,8 +38,9 @@ class Transcriber:
         """
         self.api_key = api_key
         self.client = OpenAI(api_key=api_key)
-        self.mode = "transcribe"  # 預設模式：transcribe, translate, translate_zh
+        self.mode = "transcribe"  # 預設模式：transcribe, translate_en, translate_target
         self.language = "ja"  # 預設語言：日語
+        self.target_language = "zh"  # 預設目標語言：中文
 
         # 重試設定
         self.max_retries = 3
@@ -42,30 +54,43 @@ class Transcriber:
 
         # 翻譯優化
         self.meeting_topic = ""  # 會議主題
-        self.terminology = {}  # 術語詞典 {日語: 中文}
+        self.terminology = {}  # 術語詞典 {原文或英文: 中文}
         self.previous_texts = []  # 上下文（最近的翻譯）
 
-    def set_mode(self, mode: Literal["transcribe", "translate", "translate_zh"]):
+    def set_mode(self, mode: Literal["transcribe", "translate_en", "translate_target", "translate_zh", "translate"]):
         """
         設定處理模式
 
         Args:
             mode: "transcribe" 表示轉錄為原語言文字
-                  "translate" 表示翻譯為英文
-                  "translate_zh" 表示翻譯為中文
+                  "translate_en" 表示翻譯為英文
+                  "translate_target" 表示翻譯為目標語言
         """
-        if mode not in ["transcribe", "translate", "translate_zh"]:
-            raise ValueError("模式必須為 'transcribe'、'translate' 或 'translate_zh'")
+        if mode == "translate":
+            mode = "translate_en"
+        if mode == "translate_zh":
+            mode = "translate_target"
+        if mode not in ["transcribe", "translate_en", "translate_target"]:
+            raise ValueError("模式必須為 'transcribe'、'translate_en' 或 'translate_target'")
         self.mode = mode
 
     def set_language(self, language: str):
         """
-        設定音訊語言（僅在 transcribe 模式下有效）
+        設定音訊語言
 
         Args:
             language: 語言代碼（例如 'ja', 'en', 'zh' 等）
         """
         self.language = language
+
+    def set_target_language(self, language: str):
+        """
+        設定目標語言
+
+        Args:
+            language: 目標語言代碼（例如 'zh', 'en', 'ja' 等）
+        """
+        self.target_language = language
 
     def set_meeting_context(self, meeting_topic: str = "", terminology: dict = None):
         """
@@ -73,7 +98,7 @@ class Transcriber:
 
         Args:
             meeting_topic: 會議主題/類型
-            terminology: 術語詞典 {日語: 中文}
+            terminology: 術語詞典 {原文或英文: 中文}
         """
         self.meeting_topic = meeting_topic
         self.terminology = terminology or {}
@@ -81,35 +106,79 @@ class Transcriber:
         if self.terminology:
             print(f"📖 載入術語詞典：{len(self.terminology)} 個術語")
 
-    def translate_to_chinese(self, japanese_text: str, english_text: str = "") -> str:
+    def _extract_text(self, response) -> str:
+        """將不同型態的 API 回應轉成字串"""
+        if isinstance(response, str):
+            return response.strip()
+        if hasattr(response, "text"):
+            return response.text.strip()
+        if isinstance(response, dict):
+            return response.get("text", "").strip()
+        return str(response).strip()
+
+    def _get_source_language_label(self, language: str) -> str:
+        """回傳語言的中文名稱"""
+        return LANGUAGE_LABELS_ZH.get(language, language.upper())
+
+    def _transcribe_source_text(self, audio_file: BytesIO) -> str:
+        """以來源語言做逐字稿"""
+        response = self.client.audio.transcriptions.create(
+            model="whisper-1",
+            file=("audio.wav", audio_file, "audio/wav"),
+            language=self.language,
+            response_format="text"
+        )
+        return self._extract_text(response)
+
+    def _translate_audio_to_english(self, audio_file: BytesIO) -> str:
+        """將音訊翻譯為英文"""
+        response = self.client.audio.translations.create(
+            model="whisper-1",
+            file=("audio.wav", audio_file, "audio/wav"),
+            response_format="text"
+        )
+        return self._extract_text(response)
+
+    def translate_to_target_language(
+        self,
+        source_text: str,
+        source_language: str,
+        target_language: str,
+        english_text: str = ""
+    ) -> str:
         """
-        使用 GPT API 將日語翻譯為繁體中文
+        使用 GPT API 將原文翻譯為指定語言
 
         Args:
-            japanese_text: 日語文字
-            english_text: 英文翻譯（可選，用於輔助理解）
+            source_text: 原文文字
+            source_language: 原文語言代碼
+            target_language: 目標語言代碼
+            english_text: 英文參考（可選，用於輔助理解）
 
         Returns:
-            繁體中文翻譯
+            目標語言翻譯
         """
         try:
+            source_label = self._get_source_language_label(source_language)
+            target_label = self._get_source_language_label(target_language)
+
             # 構建 system prompt
-            system_prompt = "你是專業的翻譯專家，請將文字翻譯成自然流暢的繁體中文。只返回翻譯結果，不要添加任何解釋或註解。"
+            system_prompt = f"你是專業的翻譯專家，請將文字翻譯成自然流暢的{target_label}。只返回翻譯結果，不要添加任何解釋或註解。"
 
             # 如果有會議主題，加入上下文
             if self.meeting_topic:
                 system_prompt += f"\n\n這是一場關於「{self.meeting_topic}」的會議，請使用相關的專業術語。"
 
             # 如果有術語詞典，加入翻譯指引（英文→中文）
-            if self.terminology:
+            if self.terminology and target_language == "zh":
                 terms_list = "\n".join([f"- {en} → {zh}" for en, zh in self.terminology.items()])
                 system_prompt += f"\n\n請特別注意以下專有名詞的翻譯（優先使用這些翻譯）：\n{terms_list}"
 
-            # 構建 user prompt（同時提供日文和英文）
-            if english_text:
-                user_prompt = f"日語原文：{japanese_text}\n英文翻譯：{english_text}\n\n請翻譯成繁體中文："
+            # 構建 user prompt
+            if english_text and source_language != "en":
+                user_prompt = f"{source_label}原文：{source_text}\n英文參考：{english_text}\n\n請翻譯成{target_label}："
             else:
-                user_prompt = f"請翻譯：{japanese_text}"
+                user_prompt = f"{source_label}原文：{source_text}\n\n請翻譯成{target_label}："
 
             # 如果有上下文，加入前幾句話作為參考
             if self.previous_texts:
@@ -136,16 +205,16 @@ class Transcriber:
             translated_text = response.choices[0].message.content.strip()
 
             # 儲存到上下文
-            self.previous_texts.append(f"日：{japanese_text}\n中：{translated_text}")
+            self.previous_texts.append(f"{source_label}：{source_text}\n{target_label}：{translated_text}")
             if len(self.previous_texts) > 10:  # 只保留最近 10 句
                 self.previous_texts = self.previous_texts[-10:]
 
-            print(f"🈯 翻譯完成：{japanese_text[:30]}... → {translated_text[:30]}...")
+            print(f"🈯 翻譯完成：{source_text[:30]}... → {translated_text[:30]}...")
             return translated_text
 
         except Exception as e:
             print(f"❌ GPT 翻譯失敗：{e}")
-            return f"[翻譯錯誤] {japanese_text}"
+            return f"[翻譯錯誤] {source_text}"
 
     def transcribe_audio(self, audio_file: BytesIO, duration: float) -> Optional[Dict]:
         """
@@ -167,77 +236,56 @@ class Transcriber:
                 # 重設 BytesIO 的讀取位置
                 audio_file.seek(0)
 
-                # 儲存所有語言版本的文字
-                texts = {}
+                # 先取得來源語言逐字稿，後續模式都以此為基礎
+                source_text = self._transcribe_source_text(audio_file)
+                texts = {self.language: source_text}
+                text = source_text
+                whisper_calls = 1
+                source_language = self.language
 
-                # 呼叫 Whisper API
-                if self.mode == "transcribe":
-                    # 轉錄模式（保留原語言）
-                    response = self.client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=("audio.wav", audio_file, "audio/wav"),
-                        language=self.language,
-                        response_format="text"
-                    )
-                    text = response.strip() if isinstance(response, str) else response.get('text', '').strip()
-                    texts['original'] = text
+                if self.mode == "translate_en":
+                    if source_language == "en":
+                        english_text = source_text
+                    else:
+                        audio_file.seek(0)
+                        english_text = self._translate_audio_to_english(audio_file)
+                        whisper_calls += 1
 
-                elif self.mode == "translate":
-                    # 先取得日語原文
-                    audio_file.seek(0)
-                    response_ja = self.client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=("audio.wav", audio_file, "audio/wav"),
-                        language=self.language,
-                        response_format="text"
-                    )
-                    japanese_text = response_ja.strip() if isinstance(response_ja, str) else response_ja.get('text', '').strip()
-                    texts['ja'] = japanese_text
-
-                    # 再翻譯為英文
-                    audio_file.seek(0)
-                    response_en = self.client.audio.translations.create(
-                        model="whisper-1",
-                        file=("audio.wav", audio_file, "audio/wav"),
-                        response_format="text"
-                    )
-                    text = response_en.strip() if isinstance(response_en, str) else response_en.get('text', '').strip()
-                    texts['en'] = text
-
-                else:  # translate_zh
-                    # 先轉錄日語
-                    response_ja = self.client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=("audio.wav", audio_file, "audio/wav"),
-                        language=self.language,
-                        response_format="text"
-                    )
-                    japanese_text = response_ja.strip() if isinstance(response_ja, str) else response_ja.get('text', '').strip()
-                    texts['ja'] = japanese_text
-
-                    # 再翻譯為英文
-                    audio_file.seek(0)
-                    response_en = self.client.audio.translations.create(
-                        model="whisper-1",
-                        file=("audio.wav", audio_file, "audio/wav"),
-                        response_format="text"
-                    )
-                    english_text = response_en.strip() if isinstance(response_en, str) else response_en.get('text', '').strip()
                     texts['en'] = english_text
+                    text = english_text
 
-                    # 最後翻譯成中文（同時傳入日文和英文）
-                    chinese_text = self.translate_to_chinese(japanese_text, english_text)
-                    texts['zh'] = chinese_text
-                    text = chinese_text
+                elif self.mode == "translate_target":
+                    english_text = ""
+
+                    if source_language != "en":
+                        audio_file.seek(0)
+                        english_text = self._translate_audio_to_english(audio_file)
+                        texts['en'] = english_text
+                        whisper_calls += 1
+                    else:
+                        texts['en'] = source_text
+                        english_text = source_text
+
+                    if self.target_language == source_language:
+                        target_text = source_text
+                    elif self.target_language == "en":
+                        target_text = english_text or source_text
+                    else:
+                        target_text = self.translate_to_target_language(
+                            source_text,
+                            source_language,
+                            self.target_language,
+                            english_text
+                        )
+
+                    texts[self.target_language] = target_text
+                    text = target_text
 
                 # 計算延遲時間
                 latency = time.time() - start_time
 
-                # 更新統計資訊（translate 和 translate_zh 模式呼叫了2次 Whisper）
-                if self.mode in ["translate", "translate_zh"]:
-                    self.total_api_calls += 2
-                else:
-                    self.total_api_calls += 1
+                # 更新統計資訊
+                self.total_api_calls += whisper_calls
                 self.total_audio_duration += duration
 
                 # 如果文字為空，視為無效結果
@@ -246,16 +294,18 @@ class Transcriber:
 
                 # 判斷輸出語言
                 if self.mode == "transcribe":
-                    output_language = self.language
-                elif self.mode == "translate":
+                    output_language = source_language
+                elif self.mode == "translate_en":
                     output_language = "en"
-                else:  # translate_zh
-                    output_language = "zh"
+                else:  # translate_target
+                    output_language = self.target_language
 
                 return {
                     'text': text,
-                    'texts': texts,  # 所有語言版本
+                    'texts': texts,  # 所有語言版本，以語言代碼為 key
                     'mode': self.mode,
+                    'source_language': source_language,
+                    'target_language': self.target_language,
                     'language': output_language,
                     'duration': duration,
                     'latency': round(latency, 2),
@@ -307,7 +357,8 @@ class Transcriber:
             'total_duration': round(self.total_audio_duration, 1),
             'estimated_cost': round(self.get_api_cost_estimate(), 4),
             'mode': self.mode,
-            'language': self.language
+            'language': self.language,
+            'target_language': self.target_language
         }
 
 
