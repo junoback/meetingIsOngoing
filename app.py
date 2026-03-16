@@ -962,6 +962,8 @@ LEGACY_MODE_ALIASES = {
 }
 
 TOP_PANEL_HEIGHT = 500
+MAX_VISIBLE_FEED_ITEMS = 180
+MAX_VISIBLE_TRANSCRIPT_CARDS = 120
 
 
 def init_session_state():
@@ -1002,6 +1004,13 @@ def init_session_state():
         st.session_state.mode = LEGACY_MODE_ALIASES[st.session_state.mode]
     if 'reading_flow_language' not in st.session_state:
         st.session_state.reading_flow_language = st.session_state.target_language
+
+
+def limit_visible_items(items: list, max_items: int) -> tuple[list, int]:
+    """限制前端一次渲染的項目數量，避免長 session 造成畫面 payload 過大"""
+    if max_items <= 0 or len(items) <= max_items:
+        return items, 0
+    return items[-max_items:], len(items) - max_items
 
 
 def normalize_mode(mode: str) -> str:
@@ -2044,23 +2053,51 @@ def main():
         st.divider()
 
         # 語言選擇
-        language = st.selectbox(
-            "Audio Language",
-            list(LANGUAGE_OPTIONS.keys()),
-            format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-            disabled=st.session_state.is_recording,
-            help="Select the language spoken in the meeting. Translation targets update automatically.",
-            key='language'
-        )
+        language_options = list(LANGUAGE_OPTIONS.keys())
+        current_language = st.session_state.get('language', 'ja')
+        current_target_language = st.session_state.get('target_language', 'zh')
+        current_language_index = language_options.index(current_language) if current_language in language_options else 0
+        current_target_index = language_options.index(current_target_language) if current_target_language in language_options else 0
 
-        target_language = st.selectbox(
-            "Native Language",
-            list(LANGUAGE_OPTIONS.keys()),
-            format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-            disabled=st.session_state.is_recording,
-            help="Choose the language you want as your personal translation output.",
-            key='target_language'
-        )
+        if st.session_state.is_recording:
+            st.selectbox(
+                "Audio Language",
+                language_options,
+                index=current_language_index,
+                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
+                disabled=True,
+                help="Language is locked while recording is in progress."
+            )
+            st.selectbox(
+                "Native Language",
+                language_options,
+                index=current_target_index,
+                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
+                disabled=True,
+                help="Native output language is locked while recording is in progress."
+            )
+        else:
+            if st.session_state.get('language_widget') not in language_options:
+                st.session_state.language_widget = current_language
+            selected_language = st.selectbox(
+                "Audio Language",
+                language_options,
+                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
+                help="Select the language spoken in the meeting. Translation targets update automatically.",
+                key='language_widget'
+            )
+            st.session_state.language = selected_language
+
+            if st.session_state.get('target_language_widget') not in language_options:
+                st.session_state.target_language_widget = current_target_language
+            selected_target_language = st.selectbox(
+                "Native Language",
+                language_options,
+                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
+                help="Choose the language you want as your personal translation output.",
+                key='target_language_widget'
+            )
+            st.session_state.target_language = selected_target_language
 
         mode_options = get_mode_options(st.session_state.language, st.session_state.target_language)
         mode_keys = list(mode_options.keys())
@@ -2068,17 +2105,30 @@ def main():
         current_mode = normalize_mode(st.session_state.get('mode', default_mode))
         if current_mode not in mode_keys:
             st.session_state.mode = default_mode if default_mode in mode_keys else mode_keys[0]
+            current_mode = st.session_state.mode
 
         # 處理模式
         st.markdown("<div class='section-label'>Translation Mode</div>", unsafe_allow_html=True)
 
-        mode = st.radio(
-            "選擇模式",
-            mode_keys,
-            format_func=lambda x: mode_options[x],
-            disabled=st.session_state.is_recording,
-            key='mode'
-        )
+        if st.session_state.is_recording:
+            current_mode_index = mode_keys.index(current_mode) if current_mode in mode_keys else 0
+            st.radio(
+                "選擇模式",
+                mode_keys,
+                index=current_mode_index,
+                format_func=lambda x: mode_options[x],
+                disabled=True
+            )
+        else:
+            if st.session_state.get('mode_widget') not in mode_keys:
+                st.session_state.mode_widget = current_mode
+            mode = st.radio(
+                "選擇模式",
+                mode_keys,
+                format_func=lambda x: mode_options[x],
+                key='mode_widget'
+            )
+            st.session_state.mode = mode
 
         st.divider()
 
@@ -2223,6 +2273,7 @@ def main():
     selected_flow_language = st.session_state.reading_flow_language
     selected_flow_label = get_language_label(selected_flow_language)
     feed_items = get_feed_items(transcripts, selected_flow_language)
+    visible_feed_items, hidden_feed_items = limit_visible_items(feed_items, MAX_VISIBLE_FEED_ITEMS)
     selected_device_label = st.session_state.get('selected_device', 'BlackHole 2ch')
     meeting_name_display = st.session_state.meeting_name or "Untitled meeting"
     meeting_topic_display = st.session_state.meeting_topic or "Topic not set"
@@ -2245,25 +2296,36 @@ def main():
     flow_selector_col, flow_selector_spacer = st.columns([2.3, 3.7])
     with flow_selector_col:
         st.markdown("<div class='section-label'>Reading Flow Language</div>", unsafe_allow_html=True)
-        st.selectbox(
+        if st.session_state.get('reading_flow_language_widget') not in flow_language_options:
+            st.session_state.reading_flow_language_widget = selected_flow_language
+        selected_flow_language = st.selectbox(
             "Reading Flow Language",
             flow_language_options,
             format_func=get_language_label,
-            key='reading_flow_language',
+            key='reading_flow_language_widget',
             label_visibility="collapsed"
         )
+        st.session_state.reading_flow_language = selected_flow_language
+        selected_flow_label = get_language_label(selected_flow_language)
+        feed_items = get_feed_items(transcripts, selected_flow_language)
+        visible_feed_items, hidden_feed_items = limit_visible_items(feed_items, MAX_VISIBLE_FEED_ITEMS)
+        reading_line_count = len(feed_items)
 
     hero_col1, hero_col2 = st.columns([5, 1])
 
     with hero_col1:
         render_live_feed_panel(
-            feed_items,
+            visible_feed_items,
             selected_flow_language,
             status_metadata,
             meeting_name_display,
             meeting_topic_display,
             st.session_state.is_recording
         )
+        if hidden_feed_items > 0:
+            st.caption(
+                f"Reading Flow 僅顯示最近 {len(visible_feed_items)} 段內容，以保持長時間錄音穩定。更早內容仍保留在逐字稿資料與匯出檔案中。"
+            )
 
     with hero_col2:
         st.markdown(
@@ -2368,7 +2430,12 @@ def main():
     )
 
     if transcripts:
-        for item in transcripts[::-1]:
+        visible_transcripts, hidden_transcripts = limit_visible_items(transcripts, MAX_VISIBLE_TRANSCRIPT_CARDS)
+        if hidden_transcripts > 0:
+            st.caption(
+                f"詳細卡片目前顯示最近 {len(visible_transcripts)} 筆結果。更早內容仍會保留在 session 與匯出檔案中。"
+            )
+        for item in visible_transcripts[::-1]:
             render_transcript_card(item, st.session_state.show_bilingual)
     else:
         st.markdown(
