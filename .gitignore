@@ -34,3 +34,6 @@ transcripts/*.txt
 # 暫存檔
 *.tmp
 .cache/
+
+# Claude Code internal
+.claude/
