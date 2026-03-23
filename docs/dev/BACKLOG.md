@@ -100,14 +100,13 @@
 - **Risk**: Low
 
 ### P3-04: Auto-save settings on change
-- **Status**: `[ ]`
-- **Why**: Settings like chunk_duration, silence_threshold, selected_device are not persisted on change.
-- **Plan**: Save to config on widget change callback.
-- **Effort**: Small
-- **Risk**: Low
+- **Status**: `[x]` Done (2026-03-23)
 
 ---
 
 ## Completed
 
-(None yet — this backlog was created on 2026-03-23)
+### BUG: Settings reset during long recording sessions (2026-03-23)
+- **Root cause**: Streamlit widget key flip-flopping + slider value= override during rerun loop
+- **Fix**: Unified keyed widgets for recording/non-recording, init-once pattern, auto-save to config
+- **Also completed**: P3-04 (auto-save settings) was merged into this fix

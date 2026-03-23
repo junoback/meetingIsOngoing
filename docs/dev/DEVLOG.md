@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-03-23 — Session: Bug Fix + Dev Infrastructure + Skills
+
+### What was done (continued)
+- **Fixed critical bug**: Settings reset during long recording sessions
+  - Root cause 1: Language/mode widgets used keyless disabled variants during recording → values drifted on rerun
+  - Root cause 2: Slider `value=config_manager.get_setting()` passed every rerun → overrode user's selection
+  - Fix: Unified keyed widgets, `_init_once()` pattern, `_persist_setting_if_changed()` auto-save
+- **Completed P3-04**: All settings now auto-saved to config.json on change
+- **Created global Skills**: `/dev-continuity-init` and `/dev-sync` for cross-project reuse
+- **Set up iCloud cloud-sync**: hooks auto-pull on session start, auto-push on commit and stop
+
+### Issues encountered
+- Streamlit's interaction between `key=` and `value=`/`index=` is subtle and poorly documented
+- When a keyed widget receives `value=` that differs from session_state, behavior varies by widget type
+- `_last_persisted` dict needs to be module-level to survive across reruns (Streamlit re-imports don't reset module globals)
+
+### Decisions
+- Bug fix prioritized over original sprint plan (P1-01 CSS extraction)
+- Auto-save merged with bug fix since both touch the same widget code
+
+---
+
 ## 2026-03-23 — Session: Initial Analysis & Dev Infrastructure
 
 ### What was done
