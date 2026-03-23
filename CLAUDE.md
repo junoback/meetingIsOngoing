@@ -7,13 +7,27 @@ Primary use case: Japanese meetings → Chinese translation for semiconductor/eF
 
 ## Development Continuity
 **IMPORTANT**: This project is developed across multiple sessions on different machines.
-Before making ANY changes, always read the development log and backlog:
-- `docs/dev/DEVLOG.md` — chronological development log (what was done, issues encountered)
-- `docs/dev/BACKLOG.md` — prioritized task backlog with status tracking
-- `docs/dev/ARCHITECTURE.md` — architecture decisions and module map
-- `docs/dev/CURRENT_SPRINT.md` — current sprint focus and progress
 
-After completing work, ALWAYS update these files before the session ends.
+### Session Start Protocol
+Before making ANY code changes, read these files in order:
+1. `docs/dev/CURRENT_SPRINT.md` — what to work on NOW + handoff notes from last session
+2. `docs/dev/BACKLOG.md` — full prioritized task list
+3. `docs/dev/DEVLOG.md` — past session records (scan recent entries)
+4. `docs/dev/ARCHITECTURE.md` — if needed for context on module structure
+
+### Incremental Save Protocol (critical)
+Do NOT wait until session end to update docs. Instead:
+- **After completing each BACKLOG task**: immediately update CURRENT_SPRINT.md status + BACKLOG.md status, then commit the doc changes together with the code changes.
+- **After every git commit**: check if docs/dev/ needs a status update (a PostToolUse hook will remind you).
+- **Before starting a new task**: ensure previous task's doc updates are committed.
+
+This way, even if the session is abruptly terminated, the latest completed task is always recorded.
+
+### What goes where
+- `CURRENT_SPRINT.md` — task status checkboxes + "Session Handoff Notes" section at bottom
+- `DEVLOG.md` — append one entry per session summarizing what was done, issues, decisions
+- `BACKLOG.md` — move completed items, add newly discovered tasks
+- `ARCHITECTURE.md` — update only when module structure changes
 
 ## Code Conventions
 - All user-facing UI text: English labels, Chinese descriptions where needed
