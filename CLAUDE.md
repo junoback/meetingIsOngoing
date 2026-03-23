@@ -57,6 +57,24 @@ docs/dev/           — Development documentation (log, backlog, architecture)
 - No automated tests yet. Manual testing via `streamlit run app.py`.
 - Requires BlackHole 2ch or a microphone for audio input.
 
+## Cloud Memory Sync
+Dev docs are synced to iCloud Drive for cross-machine continuity.
+Hooks handle this automatically, but on a NEW machine you need to bootstrap:
+
+```bash
+# 1. Clone the repo and set up .claude/hooks/ (copy from another machine or iCloud)
+# 2. The hooks live in .claude/ (gitignored), sync script at:
+#    .claude/hooks/cloud-sync.sh
+# 3. Manual commands:
+.claude/hooks/cloud-sync.sh pull    # Cloud → Local (session start)
+.claude/hooks/cloud-sync.sh push    # Local → Cloud (after changes)
+.claude/hooks/cloud-sync.sh status  # Compare local vs cloud
+.claude/hooks/cloud-sync.sh init    # First-time setup on new machine
+```
+
+Cloud path: `~/Library/Mobile Documents/com~apple~CloudDocs/claude-memory/meetingIsOngoing/`
+To change provider, set env var: `export CLAUDE_CLOUD_MEMORY=~/Library/CloudStorage/GoogleDrive-.../claude-memory`
+
 ## Common Commands
 ```bash
 # Run the app
