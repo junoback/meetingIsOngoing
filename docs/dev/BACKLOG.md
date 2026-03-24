@@ -15,7 +15,7 @@
 - **Risk**: Low
 
 ### P1-02: Extract HTML template builders from app.py
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: `render_live_feed_panel()` alone is ~200 lines of HTML/CSS/JS. Multiple `build_*` functions embed large HTML blocks.
 - **Plan**: Create `templates.py` with all HTML builder functions.
 - **Effort**: Medium

@@ -1,6 +1,6 @@
 # Current Sprint
 
-> Updated: 2026-03-23
+> Updated: 2026-03-24
 > Sprint goal: **Fix critical bug + improve maintainability**
 
 ## Sprint Tasks
@@ -21,9 +21,10 @@
 - **Acceptance**: app.py imports CSS from styles.py, no visual change
 
 ### 3. [P1-02] Extract HTML template builders from app.py
-- **Status**: `[ ]` Not started
+- **Status**: `[x]` Done (2026-03-24)
 - **Target**: Move template builders to `templates.py`
 - **Acceptance**: app.py imports from templates.py, no visual change
+- **Result**: Created `templates.py` (536 lines). Moved constants, lookup helpers, data helpers, and 5 HTML builders. app.py reduced from 2550 → 2063 lines.
 
 ### 4. [P1-04] Circuit breaker for API failures
 - **Status**: `[ ]` Not started
@@ -33,4 +34,6 @@
 - P1-03 (st.fragment) deferred to next sprint — needs Streamlit version check first
 
 ## Session Handoff Notes
-Bug fix and P3-04 complete. Next task: P1-01 (CSS extraction).
+P1-02 (HTML template extraction) complete. templates.py now holds all HTML builders, constants, lookup/data helpers.
+app.py still has ~930 lines of inline CSS (P1-01 not yet done) and main() UI logic.
+Next task: P1-01 (CSS extraction) or P1-04 (circuit breaker).
