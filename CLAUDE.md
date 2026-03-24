@@ -54,8 +54,9 @@ docs/dev/           — Development documentation (log, backlog, architecture)
 - app.py is ~2550 lines and needs refactoring (CSS, HTML templates, business logic mixed)
 
 ## Testing
-- No automated tests yet. Manual testing via `streamlit run app.py`.
-- Requires BlackHole 2ch or a microphone for audio input.
+- **Automated**: 126 pytest tests covering config_manager, templates, transcriber, audio_recorder
+- **Manual**: `streamlit run app.py` with BlackHole 2ch or microphone for audio input
+- Run tests: `.venv/bin/python -m pytest tests/ -v`
 
 ## Cloud Memory Sync
 Dev docs are synced to iCloud Drive for cross-machine continuity.

@@ -410,10 +410,13 @@ class TranscriberWorker:
 
     def _record_success(self):
         """API 呼叫成功時重置 circuit breaker"""
+        was_degraded = self._consecutive_failures > 0 or self._circuit_open
         self._consecutive_failures = 0
         if self._circuit_open:
             print("🟢 Circuit breaker 已恢復（API 重新正常）")
             self._circuit_open = False
+        if was_degraded:
+            # half-open 成功後或連續失敗歸零時，重置退避時間
             self._current_backoff = self.CB_INITIAL_BACKOFF
 
     def _record_failure(self):

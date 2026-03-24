@@ -14,11 +14,20 @@
 - **P3-02**: Mode/language switching during recording — mode radio, target language, and bilingual toggle enabled during recording; audio language stays locked for Whisper consistency
 - **P1-03**: Reduced flickering with `st.fragment` — main content area wrapped in fragment with `run_every=2s` during recording; removed `time.sleep(1); st.rerun()` loop; controls use `st.rerun(scope="app")`
 
+### What was done (continued — infrastructure)
+- **P4-01**: Added automated test suite (126 tests)
+  - `test_config_manager.py` — config I/O, API key, meeting config, terminology (24 tests)
+  - `test_templates.py` — constants, lookups, mode helpers, transcript data processing (33 tests)
+  - `test_transcriber.py` — mode setup, stats, text extraction, mocked API, circuit breaker (29 tests)
+  - `test_audio_recorder.py` — setup, silence detection, buffer ops, VAD boundary, WAV conversion (28 tests)
+- **Bug fix**: Circuit breaker `_record_success()` didn't reset backoff after half-open → success path (backoff stayed doubled)
+
 ### Decisions
 - Keyboard shortcuts use Ctrl+Shift (or Cmd+Shift on Mac) prefix to avoid conflicts with browser shortcuts
 - Session history only shown when not recording to avoid UI clutter during active sessions
 - P3-02: Audio language locked during recording (Whisper needs consistent source), but target language and mode can switch freely — Python GIL makes simple attribute assignment thread-safe
 - P1-03: st.fragment wraps live feed + status + controls + metrics + transcripts as one fragment; sidebar stats only update on user interaction (acceptable trade-off)
+- Tests use `unittest.mock` for API calls, `tmp_path` for config isolation; no hardware (microphone) needed
 
 ---
 

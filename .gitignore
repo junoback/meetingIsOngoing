@@ -36,6 +36,7 @@ transcripts/*.vtt
 # 暫存檔
 *.tmp
 .cache/
+.pytest_cache/
 
 # Runtime PID file
 .streamlit_app.pid

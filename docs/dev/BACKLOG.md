@@ -104,6 +104,18 @@
 
 ---
 
+## Priority 4 — Infrastructure
+
+### P4-01: Automated test suite
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: No automated tests existed. Manual testing only via streamlit run.
+- **Plan**: Add pytest suite covering config_manager, templates, transcriber, audio_recorder.
+- **Effort**: Medium
+- **Risk**: Low
+- **Result**: 126 tests across 4 test files, covering config I/O, language lookups, VAD logic, circuit breaker, API mocking. Also found and fixed a circuit breaker backoff reset bug.
+
+---
+
 ## Completed
 
 ### BUG: Settings reset during long recording sessions (2026-03-23)
