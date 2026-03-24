@@ -827,7 +827,7 @@ def main():
         # 術語詞典管理（可展開）
         with st.expander("Terminology Dictionary", expanded=False):
             st.markdown("**Manage specialized terms and translations**")
-            st.info("Recommended: Use key terms in the source language or English. Current term dictionary is applied when Native Language is Chinese.")
+            st.info("Recommended: Use key terms in the source language or English. Terms are applied to all translation modes.")
 
             # 顯示現有術語
             terminology = config_manager.get_terminology()
@@ -850,7 +850,7 @@ def main():
             with col_new1:
                 new_source = st.text_input("原文（來源語言或英文）", key="new_term_source", placeholder="例如：wafer")
             with col_new2:
-                new_target = st.text_input("中文翻譯", key="new_term_target", placeholder="例如：晶圓")
+                new_target = st.text_input("Translation", key="new_term_target", placeholder="例如：晶圓")
 
             if st.button("➕ 添加術語"):
                 if new_source and new_target:
@@ -860,7 +860,7 @@ def main():
                     else:
                         st.error("添加失敗")
                 else:
-                    st.warning("請填寫原文和中文翻譯（此詞典目前只套用在中文母語輸出）")
+                    st.warning("請填寫原文和對應翻譯")
 
         if st.session_state.live_transcript_path and Path(st.session_state.live_transcript_path).exists():
             st.divider()

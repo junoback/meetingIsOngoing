@@ -54,7 +54,7 @@ class Transcriber:
 
         # 翻譯優化
         self.meeting_topic = ""  # 會議主題
-        self.terminology = {}  # 術語詞典 {原文或英文: 中文}
+        self.terminology = {}  # 術語詞典 {原文: 翻譯}
         self.previous_texts = []  # 上下文（最近的翻譯）
 
     def set_mode(self, mode: Literal["transcribe", "translate_en", "translate_target", "translate_zh", "translate"]):
@@ -98,7 +98,7 @@ class Transcriber:
 
         Args:
             meeting_topic: 會議主題/類型
-            terminology: 術語詞典 {原文或英文: 中文}
+            terminology: 術語詞典 {原文: 翻譯}
         """
         self.meeting_topic = meeting_topic
         self.terminology = terminology or {}
@@ -169,10 +169,10 @@ class Transcriber:
             if self.meeting_topic:
                 system_prompt += f"\n\n這是一場關於「{self.meeting_topic}」的會議，請使用相關的專業術語。"
 
-            # 如果有術語詞典，加入翻譯指引（英文→中文）
-            if self.terminology and target_language == "zh":
-                terms_list = "\n".join([f"- {en} → {zh}" for en, zh in self.terminology.items()])
-                system_prompt += f"\n\n請特別注意以下專有名詞的翻譯（優先使用這些翻譯）：\n{terms_list}"
+            # 如果有術語詞典，加入翻譯指引（適用所有目標語言）
+            if self.terminology:
+                terms_list = "\n".join([f"- {src} → {tgt}" for src, tgt in self.terminology.items()])
+                system_prompt += f"\n\nIMPORTANT — Use these exact translations for the following terms:\n{terms_list}"
 
             # 構建 user prompt
             if english_text and source_language != "en":

@@ -54,7 +54,7 @@
 - **Risk**: Low
 
 ### P2-03: Terminology dictionary for all target languages
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: Currently terminology is only applied when target_language == "zh".
 - **Plan**: Remove the "zh" guard in transcriber.py, adjust prompt to be language-agnostic.
 - **Effort**: Small
