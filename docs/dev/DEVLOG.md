@@ -5,22 +5,30 @@
 
 ---
 
-## 2026-03-24 — Session: Sprint 6 — Polish & Bug Fixes
+## 2026-03-24 — Session: Sprint 6 — Widget Reset Bug Fix & Polish
 
 ### What was done
-- **S6-01**: Fixed terminology zh-only guard — P2-03 was marked done but `target_language == "zh"` guard remained in `start_recording()`, meaning terminology was only loaded for Chinese target. Now loads for all languages.
-- **S6-02**: Replaced 3 remaining `print()` calls in app.py with `logger.info()`/`logger.error()`. Zero `print()` in production code now.
-- **S6-03**: Added settings auto-persist — `_persist_setting_if_changed()` with dedup cache saves 8 sidebar settings to config.json on change (language, target_language, mode, selected_device, chunk_duration, silence_threshold, vad_enabled, show_bilingual).
-- **S6-04**: Added transcript memory cap — `ProcessingController.MAX_IN_MEMORY_TRANSCRIPTS = 500`. Evicts oldest entries from memory during long sessions; live transcript file still has all data.
-- **S6-05**: Fixed history download bug — `preview` could be undefined if file read raised exception; now initialized to `None` with conditional download button.
-- **Tests**: 147 total (+5 new for memory cap + auto-persist).
+- **BUG FIX (critical)**: Widget state reset on Start Recording — 3-layer defense:
+  1. `_force_sync_widget_keys()` called before every `st.rerun(scope="app")` — force-writes authoritative values to widget keys
+  2. `index=` parameter on all selectboxes/radio as fallback (computed from authoritative `st.session_state`)
+  3. Auto-persist compares against config baseline to prevent transient resets from corrupting saved settings
+  - Also fixed `StreamlitAPIException` for `reading_flow_language_widget` (inside fragment, already instantiated — wrapped in try/except, index= fallback protects it)
+- **S6-01**: Fixed terminology zh-only guard — removed `target_language == "zh"` guard in `start_recording()`
+- **S6-02**: Replaced 3 remaining `print()` calls with `logger`
+- **S6-03**: Added settings auto-persist with `_persist_setting_if_changed()`
+- **S6-04**: Transcript memory cap (MAX_IN_MEMORY_TRANSCRIPTS=500)
+- **S6-05**: Fixed history download bug (`preview` safety)
+- **Tests**: 147 total (+5 new)
 
 ### Issues encountered
-- P2-03 (terminology for all languages) was previously marked complete in BACKLOG but the actual guard in app.py was never removed — classic "doc says done but code says otherwise" gap.
+- **Root cause of widget reset**: `st.rerun(scope="app")` from inside a `@st.fragment` causes Streamlit to lose/reset sidebar widget keys. Without `index=`, selectboxes default to item 0 (Japanese/Transcribe).
+- Previous fix (commit 4b6bbec, unified widget keys) was insufficient — the keys themselves were being discarded by Streamlit during fragment-triggered full-page reruns.
+- Auto-persist initially made it worse by saving the reset values to config, corrupting the user's settings. Fixed by comparing against config baseline instead of memory cache.
+- `reading_flow_language_widget` is inside the fragment, so `_force_sync_widget_keys()` can't modify it after instantiation. Wrapped in try/except; `index=` fallback is sufficient.
 
 ### Decisions
-- Memory cap set to 500 (covers ~2.5 hours at 10s chunks). Live transcript file is the complete record.
-- Auto-persist uses module-level `_last_persisted` dict to avoid redundant disk writes on every Streamlit rerun.
+- 3-layer defense is intentional overkill — Streamlit's widget state behavior across fragment/page boundaries is poorly documented and may change between versions.
+- Auto-persist only fires on genuine user change (value differs from authoritative state), never on render-cycle echo.
 
 ---
 
