@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-03-24 — Session: Two Sprints Complete (P1 + P2)
+
+### What was done (Sprint 2 — Feature Enhancements)
+- **P2-03**: Terminology dictionary now works for all target languages (removed zh-only guard)
+- **P2-02**: SRT/VTT subtitle export with format selector in UI
+- **P2-01**: Energy-based VAD smart chunking in AudioRecorder
+  - Scans from tail for silence gaps (≥0.3s low energy) to find natural split points
+  - Min chunk 3s, max = user's chunk_duration setting, no new dependencies
+  - Toggleable via "Smart chunking (VAD)" checkbox in sidebar
+
+### Decisions (Sprint 2)
+- VAD uses simple energy detection (RMS) instead of silero-vad to avoid heavy dependency
+- Scan direction is tail-to-head so we split at the latest silence boundary (maximizes chunk quality)
+- SRT/VTT timecodes derived from timestamp + duration fields already on each chunk
+
+---
+
 ## 2026-03-24 — Session: Sprint Complete (P1-01, P1-02, P1-04) + Launch/Stop Commands
 
 ### What was done
