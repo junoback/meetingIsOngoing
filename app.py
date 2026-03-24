@@ -557,15 +557,20 @@ def _force_sync_widget_keys():
     if mode_val in mode_opts:
         st.session_state.mode_widget = mode_val
 
-    # Reading Flow Language
-    flow_opts = get_flow_language_options(
-        normalize_mode(mode_val),
-        st.session_state.get('language', 'ja'),
-        st.session_state.get('target_language', 'zh')
-    )
-    flow_val = st.session_state.get('reading_flow_language')
-    if flow_val in flow_opts:
-        st.session_state.reading_flow_language_widget = flow_val
+    # Reading Flow Language — 此 widget 在 fragment 內，
+    # 若從 fragment 內部呼叫（按鈕），widget 已 instantiated，不可修改 key。
+    # 用 try/except 安全處理；index= fallback 仍會保護它。
+    try:
+        flow_opts = get_flow_language_options(
+            normalize_mode(mode_val),
+            st.session_state.get('language', 'ja'),
+            st.session_state.get('target_language', 'zh')
+        )
+        flow_val = st.session_state.get('reading_flow_language')
+        if flow_val in flow_opts:
+            st.session_state.reading_flow_language_widget = flow_val
+    except Exception:
+        pass  # widget 已 instantiated，靠 index= fallback
 
 
 def start_recording():
