@@ -5,6 +5,7 @@
 """
 
 import streamlit as st
+import logging
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -29,6 +30,39 @@ from templates import (
     render_transcript_card, render_live_feed_panel,
     render_keyboard_shortcuts,
 )
+
+
+# ============================================================================
+# 日誌設定（取代直接 print，可控制輸出量）
+# ============================================================================
+logger = logging.getLogger("meeting-translator")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S"))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+def sanitize_filename(name: str) -> str:
+    """清理檔案名稱中的特殊字元（共用工具函式）"""
+    if not name:
+        return ""
+    return name.replace("/", "-").replace("\\", "-").replace(":", "-").replace("*", "-").replace("?", "").replace('"', "").replace("<", "").replace(">", "").replace("|", "")
+
+
+def _timestamp_to_seconds(ts, reference_date=None) -> float:
+    """
+    將 datetime timestamp 轉為秒數（支援跨午夜）
+
+    Args:
+        ts: datetime 物件
+        reference_date: 參考日期（會議開始時間），用於跨午夜計算
+    """
+    if reference_date and ts.date() > reference_date.date():
+        # 跨午夜：加上跨過的天數
+        day_offset = (ts.date() - reference_date.date()).days * 86400
+        return ts.hour * 3600 + ts.minute * 60 + ts.second + day_offset
+    return ts.hour * 3600 + ts.minute * 60 + ts.second
 
 
 # 設定頁面配置
@@ -154,11 +188,9 @@ def create_live_transcript_file(meeting_name: str = "", meeting_topic: str = "")
     # 構建檔案名稱
     filename_parts = ["live_transcript"]
     if meeting_name:
-        safe_meeting_name = meeting_name.replace("/", "-").replace("\\", "-").replace(":", "-")
-        filename_parts.append(safe_meeting_name)
+        filename_parts.append(sanitize_filename(meeting_name))
     if meeting_topic:
-        safe_meeting_topic = meeting_topic.replace("/", "-").replace("\\", "-").replace(":", "-")
-        filename_parts.append(safe_meeting_topic)
+        filename_parts.append(sanitize_filename(meeting_topic))
     filename_parts.append(timestamp)
 
     filename = "_".join(filename_parts) + ".txt"
@@ -222,11 +254,9 @@ def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_t
     # 構建檔案名稱
     filename_parts = ["transcript"]
     if meeting_name:
-        safe_meeting_name = meeting_name.replace("/", "-").replace("\\", "-").replace(":", "-")
-        filename_parts.append(safe_meeting_name)
+        filename_parts.append(sanitize_filename(meeting_name))
     if meeting_topic:
-        safe_meeting_topic = meeting_topic.replace("/", "-").replace("\\", "-").replace(":", "-")
-        filename_parts.append(safe_meeting_topic)
+        filename_parts.append(sanitize_filename(meeting_topic))
     filename_parts.append(timestamp)
 
     filename = "_".join(filename_parts) + ".txt"
@@ -279,11 +309,6 @@ def _format_vtt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
 
 
-def _timestamp_to_seconds(ts) -> float:
-    """將 datetime timestamp 轉為當天的秒數"""
-    return ts.hour * 3600 + ts.minute * 60 + ts.second
-
-
 def save_transcript_to_srt(
     transcripts: list,
     language_selection: str = "all",
@@ -301,14 +326,18 @@ def save_transcript_to_srt(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename_parts = ["transcript"]
     if meeting_name:
-        filename_parts.append(meeting_name.replace("/", "-").replace("\\", "-").replace(":", "-"))
+        filename_parts.append(sanitize_filename(meeting_name))
     filename_parts.append(timestamp)
     filename = "_".join(filename_parts) + ".srt"
     file_path = transcripts_dir / filename
 
+    # 取得最早的 transcript 作為跨午夜參考
+    ordered = list(reversed(transcripts))
+    ref_date = ordered[0]['timestamp'] if ordered else None
+
     with open(file_path, 'w', encoding='utf-8') as f:
-        for idx, item in enumerate(reversed(transcripts), 1):
-            start_sec = _timestamp_to_seconds(item['timestamp'])
+        for idx, item in enumerate(ordered, 1):
+            start_sec = _timestamp_to_seconds(item['timestamp'], ref_date)
             end_sec = start_sec + item.get('duration', 5.0)
 
             start_tc = _format_srt_time(start_sec)
@@ -349,7 +378,7 @@ def save_transcript_to_vtt(
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename_parts = ["transcript"]
     if meeting_name:
-        filename_parts.append(meeting_name.replace("/", "-").replace("\\", "-").replace(":", "-"))
+        filename_parts.append(sanitize_filename(meeting_name))
     filename_parts.append(timestamp)
     filename = "_".join(filename_parts) + ".vtt"
     file_path = transcripts_dir / filename
@@ -361,8 +390,11 @@ def save_transcript_to_vtt(
             f.write(f"NOTE {' — '.join(note_parts)}\n")
         f.write("\n")
 
-        for idx, item in enumerate(reversed(transcripts), 1):
-            start_sec = _timestamp_to_seconds(item['timestamp'])
+        ordered = list(reversed(transcripts))
+        ref_date = ordered[0]['timestamp'] if ordered else None
+
+        for idx, item in enumerate(ordered, 1):
+            start_sec = _timestamp_to_seconds(item['timestamp'], ref_date)
             end_sec = start_sec + item.get('duration', 5.0)
 
             start_tc = _format_vtt_time(start_sec)
@@ -426,12 +458,8 @@ class ProcessingController:
 
     def _processing_loop(self):
         """處理迴圈（在背景執行緒中執行）"""
-        print("=" * 60)
-        print("🔄 處理迴圈已啟動")
-        print(f"   Recorder: {self.recorder}")
-        print(f"   Worker: {self.worker}")
-        print(f"   Worker is_running: {self.worker.is_running}")
-        print("=" * 60)
+        logger.info("🔄 處理迴圈已啟動 (worker_running=%s)", self.worker.is_running)
+        consecutive_errors = 0
 
         while not self.stop_flag:
             try:
@@ -439,39 +467,41 @@ class ProcessingController:
                     # 從錄音器取得音訊片段
                     chunk = self.recorder.get_next_chunk(timeout=0.5)
                     if chunk:
-                        print(f"🎵 收到音訊片段（{chunk['duration']}秒）")
-                        # 提交給 Transcriber Worker
+                        logger.info("🎵 音訊片段 %.1fs → API 佇列 (qsize=%d)",
+                                    chunk['duration'], self.worker.get_queue_size())
                         self.worker.add_audio_chunk(chunk)
-                        print(f"📤 音訊片段已提交給 API 處理佇列（佇列大小：{self.worker.get_queue_size()}）")
 
                     # 從 Worker 取得處理結果
                     result = self.worker.get_result(timeout=0.1)
                     if result:
                         if result.get('success', True):
-                            # 添加到逐字稿列表
                             self.transcripts.append(result)
-                            print(f"✅ 辨識完成：{result['text'][:50]}...")
+                            logger.info("✅ 辨識完成：%s", result['text'][:50])
 
-                            # 即時追加到檔案
                             if self.live_transcript_path:
                                 append_to_live_transcript(self.live_transcript_path, result)
-                                print(f"📝 已追加到即時逐字稿：{self.live_transcript_path}")
                         else:
-                            # 處理失敗
                             error_msg = result.get('error', '未知錯誤')
-                            print(f"❌ API 呼叫失敗：{error_msg}")
-                            self.error_messages.append(f"[{datetime.now().strftime('%H:%M:%S')}] API 失敗：{error_msg}")
+                            logger.warning("❌ API 失敗：%s", error_msg)
+                            self.error_messages.append(
+                                f"[{datetime.now().strftime('%H:%M:%S')}] API 失敗：{error_msg}"
+                            )
+
+                    consecutive_errors = 0  # 正常迴圈完成，重置錯誤計數
                 else:
                     time.sleep(0.1)
 
             except Exception as e:
-                error_msg = f"處理迴圈錯誤：{str(e)}"
-                print(f"❌ {error_msg}")
-                import traceback
-                traceback.print_exc()
-                time.sleep(1)
+                consecutive_errors += 1
+                logger.error("❌ 處理迴圈錯誤 (#%d)：%s", consecutive_errors, e, exc_info=True)
+                self.error_messages.append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] 內部錯誤：{e}"
+                )
+                # 指數退避：連續錯誤時逐漸拉長等待，避免 CPU 空轉
+                backoff = min(1.0 * (2 ** (consecutive_errors - 1)), 30.0)
+                time.sleep(backoff)
 
-        print("⏹️ 處理迴圈已停止")
+        logger.info("⏹️ 處理迴圈已停止")
 
 
 def start_recording():
@@ -501,8 +531,13 @@ def start_recording():
             st.session_state.recorder.set_device(device_name=device_name)
             add_debug_log(f"✅ 音訊裝置設定成功：{device_name}")
         except ValueError as e:
-            st.warning(f"找不到裝置 '{device_name}'，使用預設裝置")
-            add_error_message(f"找不到裝置 '{device_name}'，使用預設裝置")
+            # 音訊裝置找不到是嚴重問題 — 可能錄到錯誤來源
+            st.error(
+                f"⚠️ 找不到音訊裝置「{device_name}」！\n\n"
+                f"已退回系統預設裝置（可能是內建麥克風，不是會議音源）。\n"
+                f"請確認 BlackHole 2ch 已安裝並在 Audio MIDI Setup 中啟用。"
+            )
+            add_error_message(f"⚠️ 找不到裝置 '{device_name}'，已退回系統預設 — 請確認音源")
             st.session_state.recorder.set_device(device_index=None)
 
         st.session_state.recorder.set_chunk_duration(st.session_state.chunk_duration)
@@ -1331,10 +1366,12 @@ def main():
                 if recording_file and Path(recording_file).exists():
                     file_size_mb = Path(recording_file).stat().st_size / 1024 / 1024
                     st.caption(f"File size: {file_size_mb:.2f} MB")
-                    # 使用 file object 避免將整個 WAV 載入記憶體
+                    # 讀取 WAV 檔案內容（with 確保 handle 釋放）
+                    with open(recording_file, 'rb') as wav_f:
+                        wav_data = wav_f.read()
                     st.download_button(
                         label="Download WAV",
-                        data=open(recording_file, 'rb'),
+                        data=wav_data,
                         file_name=Path(recording_file).name,
                         mime="audio/wav",
                         use_container_width=True
@@ -1391,7 +1428,7 @@ def main():
 
                         st.download_button(
                             label="Download",
-                            data=open(hist_file, 'r', encoding='utf-8').read(),
+                            data=preview,  # 已經讀取過，直接複用
                             file_name=hist_file.name,
                             mime="text/plain",
                             key=f"hist_dl_{hist_file.name}"

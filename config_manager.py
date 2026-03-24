@@ -6,8 +6,11 @@
 
 import json
 import copy
+import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger("meeting-translator")
 
 
 class ConfigManager:
@@ -40,7 +43,7 @@ class ConfigManager:
             with open(file_path, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except (json.JSONDecodeError, IOError) as e:
-            print(f"讀取設定檔失敗 {file_path}: {e}")
+            logger.warning("讀取設定檔失敗 %s: %s", file_path, e)
             return None
 
     def _load_local_or_default(self, local_path: Path, default_path: Path, fallback: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,7 +83,7 @@ class ConfigManager:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             return True
         except IOError as e:
-            print(f"儲存配置檔案失敗：{e}")
+            logger.error("儲存配置檔案失敗：%s", e)
             return False
 
     def get_api_key(self) -> Optional[str]:

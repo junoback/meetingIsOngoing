@@ -5,11 +5,14 @@
 """
 
 import time
+import logging
 from io import BytesIO
 from typing import Optional, Dict, Literal
 from openai import OpenAI
 import threading
 import queue
+
+logger = logging.getLogger("meeting-translator")
 
 
 LANGUAGE_LABELS_ZH = {
@@ -102,9 +105,9 @@ class Transcriber:
         """
         self.meeting_topic = meeting_topic
         self.terminology = terminology or {}
-        print(f"📚 會議主題：{meeting_topic}")
+        logger.info("📚 會議主題：%s", meeting_topic)
         if self.terminology:
-            print(f"📖 載入術語詞典：{len(self.terminology)} 個術語")
+            logger.info("📖 載入術語詞典：%d 個術語", len(self.terminology))
 
     def _extract_text(self, response) -> str:
         """將不同型態的 API 回應轉成字串"""
@@ -209,11 +212,11 @@ class Transcriber:
             if len(self.previous_texts) > 10:  # 只保留最近 10 句
                 self.previous_texts = self.previous_texts[-10:]
 
-            print(f"🈯 翻譯完成：{source_text[:30]}... → {translated_text[:30]}...")
+            logger.info("🈯 翻譯完成：%s → %s", source_text[:30], translated_text[:30])
             return translated_text
 
         except Exception as e:
-            print(f"❌ GPT 翻譯失敗：{e}")
+            logger.error("❌ GPT 翻譯失敗：%s", e)
             return f"[翻譯錯誤] {source_text}"
 
     def transcribe_audio(self, audio_file: BytesIO, duration: float) -> Optional[Dict]:
@@ -314,7 +317,7 @@ class Transcriber:
 
             except Exception as e:
                 error_message = str(e)
-                print(f"API 呼叫失敗（第 {attempt + 1}/{self.max_retries} 次嘗試）：{error_message}")
+                logger.warning("API 呼叫失敗（第 %d/%d 次嘗試）：%s", attempt + 1, self.max_retries, error_message)
 
                 if attempt < self.max_retries - 1:
                     # 等待後重試
@@ -413,7 +416,7 @@ class TranscriberWorker:
         was_degraded = self._consecutive_failures > 0 or self._circuit_open
         self._consecutive_failures = 0
         if self._circuit_open:
-            print("🟢 Circuit breaker 已恢復（API 重新正常）")
+            logger.info("🟢 Circuit breaker 已恢復（API 重新正常）")
             self._circuit_open = False
         if was_degraded:
             # half-open 成功後或連續失敗歸零時，重置退避時間
@@ -425,9 +428,9 @@ class TranscriberWorker:
         if self._consecutive_failures >= self.CB_FAILURE_THRESHOLD and not self._circuit_open:
             self._circuit_open = True
             self._circuit_reopen_at = time.time() + self._current_backoff
-            print(
-                f"🔴 Circuit breaker 觸發！連續 {self._consecutive_failures} 次失敗，"
-                f"暫停 API 呼叫 {self._current_backoff}s"
+            logger.warning(
+                "🔴 Circuit breaker 觸發！連續 %d 次失敗，暫停 API 呼叫 %ds",
+                self._consecutive_failures, self._current_backoff
             )
             # 發送熔斷事件到輸出佇列，讓 UI 顯示
             self.output_queue.put({
@@ -447,7 +450,7 @@ class TranscriberWorker:
             return False
         if time.time() >= self._circuit_reopen_at:
             # 冷卻結束，進入 half-open 狀態（允許嘗試一次）
-            print("🟡 Circuit breaker 冷卻結束，嘗試半開放狀態...")
+            logger.info("🟡 Circuit breaker 冷卻結束，嘗試半開放狀態...")
             self._circuit_open = False
             return False
         return True
@@ -464,7 +467,7 @@ class TranscriberWorker:
 
     def _worker_loop(self):
         """工作器主迴圈"""
-        print("🚀 Worker 執行緒已啟動")
+        logger.info("🚀 Worker 執行緒已啟動")
 
         while self.is_running:
             try:
@@ -480,7 +483,7 @@ class TranscriberWorker:
                 # 從輸入佇列取得音訊片段（超時 0.5 秒）
                 chunk = self.input_queue.get(timeout=0.5)
 
-                print(f"📥 Worker 收到音訊片段，準備呼叫 API...")
+                logger.debug("📥 Worker 收到音訊片段，準備呼叫 API...")
 
                 # 呼叫 Whisper API
                 result = self.transcriber.transcribe_audio(
@@ -490,27 +493,25 @@ class TranscriberWorker:
 
                 if result:
                     if result.get('success', True):
-                        print(f"✅ API 呼叫成功：{result.get('text', '')[:50]}")
+                        logger.info("✅ API 呼叫成功：%s", result.get('text', '')[:50])
                         self._record_success()
                     else:
-                        print(f"⚠️ API 呼叫失敗：{result.get('error', '')}")
+                        logger.warning("⚠️ API 呼叫失敗：%s", result.get('error', ''))
                         self._record_failure()
                     # 添加時間戳記
                     result['timestamp'] = chunk['timestamp']
                     # 放入輸出佇列
                     self.output_queue.put(result)
                 else:
-                    print("⚠️ API 返回空結果")
+                    logger.debug("⚠️ API 返回空結果")
 
             except queue.Empty:
                 continue
             except Exception as e:
-                print(f"❌ 工作器錯誤：{e}")
+                logger.error("❌ 工作器錯誤：%s", e, exc_info=True)
                 self._record_failure()
-                import traceback
-                traceback.print_exc()
 
-        print("⏹️ Worker 執行緒已停止")
+        logger.info("⏹️ Worker 執行緒已停止")
 
     def add_audio_chunk(self, audio_chunk: Dict):
         """

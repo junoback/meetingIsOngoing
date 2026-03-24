@@ -94,17 +94,17 @@ Mic/BlackHole → sounddevice callback → audio_buffer[]
   → Main thread renders on next st.rerun()
 ```
 
-## Known Architecture Issues
+## Resolved Architecture Issues
 
-1. **app.py monolith**: ~2550 lines mixing CSS, HTML templates, UI logic, business logic
-2. **Polling refresh**: time.sleep(1) + st.rerun() causes full page re-render every second
-3. **iframe rebuild**: Reading Flow panel HTML rebuilt from scratch every rerun
-4. **No error circuit breaker**: continuous API failures keep retrying without backoff escalation
-5. **Memory**: WAV download loads entire file into memory via f.read()
+1. ~~**app.py monolith**~~: CSS → styles.py (~940L), HTML builders → templates.py (~536L), app.py now ~1400L
+2. ~~**Polling refresh**~~: st.fragment(run_every=2s) for partial re-renders, no full-page sleep+rerun
+3. ~~**No error circuit breaker**~~: TranscriberWorker has exponential backoff circuit breaker
+4. ~~**Memory: WAV download**~~: Fixed file handle leaks; with-statement for downloads
+5. ~~**Print spam**~~: All modules use Python logging; high-frequency messages at DEBUG level
 
-## Planned Architecture Changes
+## Current Architecture Notes
 
-See BACKLOG.md for prioritized tasks. Key structural changes planned:
-- Extract CSS to separate file/function
-- Extract HTML template builders to separate module
-- Consider st.fragment (Streamlit 1.33+) for partial re-renders
+- **Logging**: All modules use `logging.getLogger("meeting-translator")`. Default level INFO.
+  Set `DEBUG` for verbose audio/API diagnostics.
+- **Thread safety**: ProcessingController has exponential backoff on consecutive errors (max 30s).
+- **Cross-midnight**: SRT/VTT export uses reference_date for monotonic timecodes.

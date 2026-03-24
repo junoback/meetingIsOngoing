@@ -104,6 +104,40 @@
 
 ---
 
+## Priority 5 — Long Session Stability (Sprint 5)
+
+### S5-01: Fix file handle leaks in download buttons
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: `open(file, 'rb')` passed directly to `st.download_button` leaks file descriptors.
+- **Fix**: Use `with open()` or reuse already-read content.
+
+### S5-02: Extract shared filename sanitizer
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: Same `.replace("/", "-").replace(...)` chain duplicated 4 times across export functions.
+- **Fix**: New `sanitize_filename()` utility function, handles more special chars.
+
+### S5-03: Structured logging (replace print spam)
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: 10+ prints/second during recording → 72K+ lines in 2-hour session, hard to find real errors.
+- **Fix**: Replaced all `print()` with Python `logging` module. High-frequency messages at DEBUG level.
+
+### S5-04: ProcessingController error recovery
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: Generic catch-all with `time.sleep(1)` silently swallows errors; user never informed.
+- **Fix**: Exponential backoff on consecutive errors, errors propagated to UI via error_messages list.
+
+### S5-05: Audio device fallback warning
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: Silent fallback to system default mic → may record keyboard/ambient noise instead of meeting.
+- **Fix**: Changed from `st.warning` to `st.error` with clear instructions about BlackHole 2ch.
+
+### S5-06: Cross-midnight SRT/VTT timecodes
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: Meetings spanning midnight produce backward-jumping timecodes.
+- **Fix**: `_timestamp_to_seconds()` now accepts reference_date for day-offset calculation.
+
+---
+
 ## Priority 4 — Infrastructure
 
 ### P4-01: Automated test suite

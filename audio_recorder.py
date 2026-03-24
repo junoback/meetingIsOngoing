@@ -10,10 +10,13 @@ import wave
 import threading
 import queue
 import time
+import logging
 from pathlib import Path
 from datetime import datetime
 from io import BytesIO
 from typing import Optional, List, Dict, Callable
+
+logger = logging.getLogger("meeting-translator")
 
 
 class AudioRecorder:
@@ -167,7 +170,7 @@ class AudioRecorder:
             status: 狀態資訊
         """
         if status:
-            print(f"音訊串流狀態：{status}")
+            logger.debug("音訊串流狀態：%s", status)
 
         if not self.is_paused:
             # 將音訊資料添加到緩衝區
@@ -240,7 +243,7 @@ class AudioRecorder:
         is_silent = self._is_silent(audio_chunk)
 
         vad_tag = "[VAD]" if self.vad_enabled else "[FIX]"
-        print(f"🔊 {vad_tag} 音訊片段 {duration:.1f}s RMS: {rms:.6f}, 靜音: {is_silent}")
+        logger.debug("🔊 %s 片段 %.1fs RMS=%.6f silent=%s", vad_tag, duration, rms, is_silent)
 
         if not is_silent:
             audio_bytes = self._numpy_to_wav_bytes(audio_chunk)
@@ -250,10 +253,10 @@ class AudioRecorder:
                 'duration': duration
             })
             self.chunks_processed += 1
-            print(f"✅ 音訊片段已加入佇列（{duration:.1f}s, 總計：{self.chunks_processed}）")
+            logger.info("🔊 %s 片段 %.1fs → 佇列 (total=%d)", vad_tag, duration, self.chunks_processed)
         else:
             self.chunks_skipped_silence += 1
-            print(f"⏭️ 音訊片段因靜音被跳過")
+            logger.debug("⏭️ 靜音跳過 (total_skipped=%d)", self.chunks_skipped_silence)
 
         self.total_duration += duration
 
@@ -288,7 +291,7 @@ class AudioRecorder:
                         # 到達最大長度，強制切割
                         audio_chunk = self._extract_samples(max_samples)
                         duration = self.chunk_duration
-                        print(f"⚠️ [VAD] 未偵測到靜音邊界，強制切割 {duration:.1f}s")
+                        logger.debug("⚠️ [VAD] 未偵測到靜音邊界，強制切割 %.1fs", duration)
                         self._emit_chunk(audio_chunk, duration)
                     else:
                         # 還沒到最大長度，繼續累積
@@ -447,11 +450,7 @@ class AudioRecorder:
             如果佇列為空且 timeout 為 None，返回 None
         """
         try:
-            queue_size = self.audio_queue.qsize()
-            if queue_size > 0:
-                print(f"📦 get_next_chunk() 被呼叫，佇列中有 {queue_size} 個音訊片段")
             chunk = self.audio_queue.get(timeout=timeout)
-            print(f"✅ get_next_chunk() 成功取得音訊片段")
             return chunk
         except queue.Empty:
             return None
