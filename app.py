@@ -599,10 +599,21 @@ def start_recording():
     trans_prov = st.session_state.get('translation_provider', 'openai_gpt')
     stt_grp = PROVIDER_KEY_GROUPS.get(stt_prov, 'openai')
     trans_grp = PROVIDER_KEY_GROUPS.get(trans_prov, 'openai')
+
+    def _has_key(grp: str) -> bool:
+        """檢查指定 group 是否有可用的 API key"""
+        if config_manager.get_provider_api_key(grp):
+            return True
+        if st.session_state.get(f'api_key_{grp}'):
+            return True
+        if grp == "openai" and st.session_state.get('api_key'):
+            return True
+        return False
+
     missing = []
-    if not (config_manager.get_provider_api_key(stt_grp) or st.session_state.api_key):
+    if not _has_key(stt_grp):
         missing.append(f"{stt_grp.upper()} ({STT_PROVIDERS[stt_prov]['name']})")
-    if not (config_manager.get_provider_api_key(trans_grp) or st.session_state.api_key):
+    if not _has_key(trans_grp):
         missing.append(f"{trans_grp.upper()} ({TRANSLATION_PROVIDERS[trans_prov]['name']})")
     if missing:
         st.error(f"請先輸入 API Key：{', '.join(missing)}")
@@ -649,17 +660,37 @@ def start_recording():
         trans_prov = st.session_state.get('translation_provider', 'openai_gpt')
         stt_group = PROVIDER_KEY_GROUPS.get(stt_prov, 'openai')
         trans_group = PROVIDER_KEY_GROUPS.get(trans_prov, 'openai')
-        stt_key = config_manager.get_provider_api_key(stt_group) or st.session_state.api_key
-        trans_key = config_manager.get_provider_api_key(trans_group) or st.session_state.api_key
 
-        add_debug_log(f"🤖 正在初始化 STT={STT_PROVIDERS[stt_prov]['name']}, 翻譯={TRANSLATION_PROVIDERS[trans_prov]['name']}...")
+        def _resolve_api_key(group: str) -> str:
+            """依序從 config → sidebar widget → 舊 api_key 取得 key"""
+            # 1. 從 config 檔案讀取（最可靠）
+            key = config_manager.get_provider_api_key(group)
+            if key:
+                return key
+            # 2. 從 sidebar 的 text_input widget 直接讀（剛輸入還未存檔的情況）
+            widget_key = st.session_state.get(f'api_key_{group}', '')
+            if widget_key:
+                # 順便存一份到 config
+                config_manager.save_provider_api_key(group, widget_key)
+                return widget_key
+            # 3. 只有 openai group 才 fallback 到舊的 api_key
+            if group == "openai":
+                return st.session_state.get('api_key', '')
+            return ''
+
+        stt_key = _resolve_api_key(stt_group)
+        trans_key = _resolve_api_key(trans_group)
+
+        add_debug_log(f"🤖 正在初始化 STT={STT_PROVIDERS[stt_prov]['name']} ({stt_group}), 翻譯={TRANSLATION_PROVIDERS[trans_prov]['name']} ({trans_group})")
+        add_debug_log(f"🔑 STT key: {stt_key[:8]}... , Trans key: {trans_key[:8]}..." if stt_key and trans_key else f"⚠️ Key 缺失！STT={bool(stt_key)}, Trans={bool(trans_key)}")
+
         st.session_state.transcriber = Transcriber(
             stt_api_key=stt_key,
             stt_provider=stt_prov,
             translation_api_key=trans_key,
             translation_provider=trans_prov,
         )
-        add_debug_log(f"✅ API 已初始化（STT: {stt_key[:8]}..., Trans: {trans_key[:8]}...）")
+        add_debug_log(f"✅ API 已初始化")
 
         st.session_state.transcriber.set_mode(st.session_state.mode)
         st.session_state.transcriber.set_language(st.session_state.language)
