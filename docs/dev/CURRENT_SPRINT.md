@@ -16,9 +16,10 @@
 - **Implementation**: `_persist_setting_if_changed()` helper, writes to config only on actual change
 
 ### 2. [P1-01] Extract CSS from app.py
-- **Status**: `[ ]` Not started
+- **Status**: `[x]` Done (2026-03-24)
 - **Target**: Move ~930 lines of CSS to `styles.py`
 - **Acceptance**: app.py imports CSS from styles.py, no visual change
+- **Result**: Created `styles.py` with `get_main_css()`. app.py reduced from 2063 → 1163 lines.
 
 ### 3. [P1-02] Extract HTML template builders from app.py
 - **Status**: `[x]` Done (2026-03-24)
@@ -34,6 +35,7 @@
 - P1-03 (st.fragment) deferred to next sprint — needs Streamlit version check first
 
 ## Session Handoff Notes
-P1-02 (HTML template extraction) complete. templates.py now holds all HTML builders, constants, lookup/data helpers.
-app.py still has ~930 lines of inline CSS (P1-01 not yet done) and main() UI logic.
-Next task: P1-01 (CSS extraction) or P1-04 (circuit breaker).
+P1-01 (CSS extraction) and P1-02 (HTML template extraction) both complete.
+app.py now 1163 lines (down from original ~2550), focused on session state + control flow.
+styles.py holds all CSS, templates.py holds all HTML builders + constants + helpers.
+Next task: P1-04 (circuit breaker for API failures).

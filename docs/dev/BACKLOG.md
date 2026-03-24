@@ -8,7 +8,7 @@
 ## Priority 1 — Stability & Maintainability
 
 ### P1-01: Extract CSS from app.py
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: app.py has ~930 lines of CSS inline. Hard to maintain, slows code navigation.
 - **Plan**: Move to `styles.py` as a function returning CSS string, or external `.css` loaded at runtime.
 - **Effort**: Small
