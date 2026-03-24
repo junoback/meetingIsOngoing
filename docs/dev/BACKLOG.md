@@ -86,7 +86,7 @@
 - **Risk**: Low
 
 ### P3-02: Allow mode switching during recording
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: Currently all sidebar controls are disabled during recording.
 - **Plan**: Allow mode/language change mid-session by updating transcriber settings on the fly.
 - **Effort**: Medium

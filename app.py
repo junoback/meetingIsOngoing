@@ -810,22 +810,30 @@ def main():
         current_target_index = language_options.index(current_target_language) if current_target_language in language_options else 0
 
         if st.session_state.is_recording:
+            # 錄音中：音源語言鎖定（Whisper 需要一致的來源語言）
             st.selectbox(
                 "Audio Language",
                 language_options,
                 index=current_language_index,
                 format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
                 disabled=True,
-                help="Language is locked while recording is in progress."
+                help="🔒 Audio language is locked while recording — Whisper needs a consistent source language."
             )
-            st.selectbox(
+            # 錄音中：目標語言可切換（翻譯即時更新）
+            if st.session_state.get('target_language_widget') not in language_options:
+                st.session_state.target_language_widget = current_target_language
+            selected_target_language = st.selectbox(
                 "Native Language",
                 language_options,
-                index=current_target_index,
                 format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-                disabled=True,
-                help="Native output language is locked while recording is in progress."
+                help="✏️ You can change the output language while recording — takes effect on the next chunk.",
+                key='target_language_widget'
             )
+            if selected_target_language != st.session_state.target_language:
+                st.session_state.target_language = selected_target_language
+                if st.session_state.transcriber:
+                    st.session_state.transcriber.set_target_language(selected_target_language)
+                    add_debug_log(f"🌐 錄音中切換目標語言：{selected_target_language}")
         else:
             if st.session_state.get('language_widget') not in language_options:
                 st.session_state.language_widget = current_language
@@ -857,28 +865,23 @@ def main():
             st.session_state.mode = default_mode if default_mode in mode_keys else mode_keys[0]
             current_mode = st.session_state.mode
 
-        # 處理模式
+        # 處理模式（錄音中也可切換）
         st.markdown("<div class='section-label'>Translation Mode</div>", unsafe_allow_html=True)
 
-        if st.session_state.is_recording:
-            current_mode_index = mode_keys.index(current_mode) if current_mode in mode_keys else 0
-            st.radio(
-                "選擇模式",
-                mode_keys,
-                index=current_mode_index,
-                format_func=lambda x: mode_options[x],
-                disabled=True
-            )
-        else:
-            if st.session_state.get('mode_widget') not in mode_keys:
-                st.session_state.mode_widget = current_mode
-            mode = st.radio(
-                "選擇模式",
-                mode_keys,
-                format_func=lambda x: mode_options[x],
-                key='mode_widget'
-            )
+        if st.session_state.get('mode_widget') not in mode_keys:
+            st.session_state.mode_widget = current_mode
+        mode = st.radio(
+            "選擇模式",
+            mode_keys,
+            format_func=lambda x: mode_options[x],
+            key='mode_widget',
+            help="✏️ Can be changed during recording." if st.session_state.is_recording else None
+        )
+        if mode != st.session_state.mode:
             st.session_state.mode = mode
+            if st.session_state.is_recording and st.session_state.transcriber:
+                st.session_state.transcriber.set_mode(mode)
+                add_debug_log(f"🔄 錄音中切換模式：{mode}")
 
         st.divider()
 
@@ -888,8 +891,7 @@ def main():
         show_bilingual = st.checkbox(
             "Show multilingual comparison",
             value=st.session_state.show_bilingual,
-            disabled=st.session_state.is_recording,
-            help="Display source text and translated text side by side",
+            help="Display source text and translated text side by side. Can be toggled during recording.",
             key='show_bilingual'
         )
 

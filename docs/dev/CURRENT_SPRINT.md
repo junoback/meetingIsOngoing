@@ -17,13 +17,17 @@
 - **Status**: `[x]` Done (2026-03-24)
 - **Result**: History section lists up to 20 transcript files with expandable preview and download buttons
 
+### 4. [P3-02] Allow mode/language switching during recording
+- **Status**: `[x]` Done (2026-03-24)
+- **Result**: Mode radio, target language, and bilingual toggle now enabled during recording. Audio language and audio settings remain locked. Changes applied to transcriber on the fly via set_mode()/set_target_language().
+
 ## Blocked / Deferred
-- P1-03 (st.fragment) — needs Streamlit version check
+- P1-03 (st.fragment) — Streamlit 1.37.1 confirmed, can implement
 - P2-05 (speaker diarization) — large effort, high risk, deferred
 
 ## Session Handoff Notes
-Sprint 3 complete. P3-01, P3-03, P2-04 all done.
+Sprint 3 complete (all 4 tasks done).
 Remaining tasks:
-- P3-02 (mode switch during recording) — medium effort, medium risk (thread safety)
+- P1-03 (st.fragment for flicker reduction) — Streamlit 1.37.1 supports it, ready to implement
 - P2-05 (speaker diarization) — large effort, high risk
-- P1-03 (st.fragment for flicker reduction) — deferred, needs version check
+All other backlog items done.
