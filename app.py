@@ -1332,6 +1332,59 @@ def main():
             else:
                 st.info("No audio file available")
 
+    # ========================================================================
+    # 歷史記錄
+    # ========================================================================
+    if not st.session_state.is_recording:
+        transcripts_dir = Path("transcripts")
+        if transcripts_dir.exists():
+            history_files = sorted(transcripts_dir.glob("*.txt"), key=lambda f: f.stat().st_mtime, reverse=True)
+            # 排除目前 session 的 live transcript
+            live_path = st.session_state.get('live_transcript_path')
+            if live_path:
+                history_files = [f for f in history_files if str(f) != live_path]
+
+            if history_files:
+                st.divider()
+                st.markdown(
+                    """
+                    <div class='section-head'>
+                        <div>
+                            <div class='section-title'>Session History</div>
+                            <div class='section-copy'>
+                                Past transcript files saved in the transcripts/ folder. Click to preview.
+                            </div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                # 顯示最近 20 個檔案
+                for hist_file in history_files[:20]:
+                    file_size_kb = hist_file.stat().st_size / 1024
+                    mod_time = datetime.fromtimestamp(hist_file.stat().st_mtime).strftime('%Y-%m-%d %H:%M')
+                    label = f"📄 {hist_file.name}  ({file_size_kb:.1f} KB · {mod_time})"
+
+                    with st.expander(label, expanded=False):
+                        try:
+                            preview = hist_file.read_text(encoding='utf-8')
+                            # 只顯示前 3000 字元作為預覽
+                            if len(preview) > 3000:
+                                st.text(preview[:3000] + "\n\n... (truncated)")
+                            else:
+                                st.text(preview)
+                        except Exception as e:
+                            st.error(f"Cannot read file: {e}")
+
+                        st.download_button(
+                            label="Download",
+                            data=open(hist_file, 'r', encoding='utf-8').read(),
+                            file_name=hist_file.name,
+                            mime="text/plain",
+                            key=f"hist_dl_{hist_file.name}"
+                        )
+
     # 鍵盤快捷鍵
     render_keyboard_shortcuts()
 

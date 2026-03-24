@@ -61,7 +61,7 @@
 - **Risk**: Low
 
 ### P2-04: Session history & review
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: No way to review past meeting transcripts within the app.
 - **Plan**: Add a "History" tab that lists saved transcript files with preview.
 - **Effort**: Medium
