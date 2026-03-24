@@ -6,7 +6,7 @@
 
 import streamlit as st
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import threading
 import html as html_module
@@ -1010,215 +1010,225 @@ def main():
             )
 
     # ========================================================================
-    # 主畫面
     # ========================================================================
-    transcripts = []
-    if st.session_state.controller:
-        transcripts = st.session_state.controller.transcripts
+    # 主畫面（使用 st.fragment 減少錄音中的全頁閃爍）
+    # ========================================================================
+    _refresh_interval = timedelta(seconds=2) if st.session_state.is_recording else None
 
-    recording_stats = st.session_state.recorder.get_recording_stats() if st.session_state.recorder else {}
-    api_stats = st.session_state.transcriber.get_stats() if st.session_state.transcriber else {}
-    status_metadata = get_status_metadata()
-    status_badge_html = (
-        f"<div class='status-badge {status_metadata['css_class']}'>"
-        f"{status_metadata['icon_html']}"
-        f"<span>{html_module.escape(status_metadata['label'])}</span>"
-        "</div>"
-    )
+    @st.fragment(run_every=_refresh_interval)
+    def _render_live_content():
+        # 重新讀取最新資料（fragment 自動刷新時需要最新數據）
+        transcripts = []
+        if st.session_state.controller:
+            transcripts = st.session_state.controller.transcripts
 
-    current_mode = normalize_mode(st.session_state.get('mode', 'translate_target'))
-    current_language = st.session_state.get('language', 'ja')
-    current_target_language = st.session_state.get('target_language', 'zh')
-    current_language_label = get_language_label(current_language)
-    current_target_language_label = get_language_label(current_target_language)
-    current_mode_options = get_mode_options(current_language, current_target_language)
-    current_mode_label = current_mode_options.get(current_mode, current_mode)
-    flow_language_options = get_flow_language_options(current_mode, current_language, current_target_language)
-    default_flow_language = get_default_flow_language(current_mode, current_language, current_target_language)
-    if st.session_state.reading_flow_language not in flow_language_options:
-        st.session_state.reading_flow_language = default_flow_language
-    selected_flow_language = st.session_state.reading_flow_language
-    selected_flow_label = get_language_label(selected_flow_language)
-    feed_items = get_feed_items(transcripts, selected_flow_language)
-    visible_feed_items, hidden_feed_items = limit_visible_items(feed_items, MAX_VISIBLE_FEED_ITEMS)
-    selected_device_label = st.session_state.get('selected_device', 'BlackHole 2ch')
-    meeting_name_display = st.session_state.meeting_name or "Untitled meeting"
-    meeting_topic_display = st.session_state.meeting_topic or "Topic not set"
-    transcript_count = len(transcripts)
-    reading_line_count = len(feed_items)
-    latest_latency = f"{transcripts[-1]['latency']:.1f}s" if transcripts else "Waiting"
-    duration_value = f"{recording_stats.get('duration', 0.0):.1f}s"
-    cost_value = f"${api_stats.get('estimated_cost', 0.0):.4f}"
-    queue_value = (
-        f"{st.session_state.worker.get_queue_size()} queued"
-        if st.session_state.worker
-        else "Idle"
-    )
-    worker_value = (
-        "Running"
-        if st.session_state.worker and st.session_state.worker.is_running
-        else "Standby"
-    )
-
-    flow_selector_col, flow_selector_spacer = st.columns([2.3, 3.7])
-    with flow_selector_col:
-        st.markdown("<div class='section-label'>Reading Flow Language</div>", unsafe_allow_html=True)
-        if st.session_state.get('reading_flow_language_widget') not in flow_language_options:
-            st.session_state.reading_flow_language_widget = selected_flow_language
-        selected_flow_language = st.selectbox(
-            "Reading Flow Language",
-            flow_language_options,
-            format_func=get_language_label,
-            key='reading_flow_language_widget',
-            label_visibility="collapsed"
+        recording_stats = st.session_state.recorder.get_recording_stats() if st.session_state.recorder else {}
+        api_stats = st.session_state.transcriber.get_stats() if st.session_state.transcriber else {}
+        status_metadata = get_status_metadata()
+        status_badge_html = (
+            f"<div class='status-badge {status_metadata['css_class']}'>"
+            f"{status_metadata['icon_html']}"
+            f"<span>{html_module.escape(status_metadata['label'])}</span>"
+            "</div>"
         )
-        st.session_state.reading_flow_language = selected_flow_language
+
+        current_mode = normalize_mode(st.session_state.get('mode', 'translate_target'))
+        current_language = st.session_state.get('language', 'ja')
+        current_target_language = st.session_state.get('target_language', 'zh')
+        current_language_label = get_language_label(current_language)
+        current_target_language_label = get_language_label(current_target_language)
+        current_mode_options = get_mode_options(current_language, current_target_language)
+        current_mode_label = current_mode_options.get(current_mode, current_mode)
+        flow_language_options = get_flow_language_options(current_mode, current_language, current_target_language)
+        default_flow_language = get_default_flow_language(current_mode, current_language, current_target_language)
+        if st.session_state.reading_flow_language not in flow_language_options:
+            st.session_state.reading_flow_language = default_flow_language
+        selected_flow_language = st.session_state.reading_flow_language
         selected_flow_label = get_language_label(selected_flow_language)
         feed_items = get_feed_items(transcripts, selected_flow_language)
         visible_feed_items, hidden_feed_items = limit_visible_items(feed_items, MAX_VISIBLE_FEED_ITEMS)
+        selected_device_label = st.session_state.get('selected_device', 'BlackHole 2ch')
+        meeting_name_display = st.session_state.meeting_name or "Untitled meeting"
+        meeting_topic_display = st.session_state.meeting_topic or "Topic not set"
+        transcript_count = len(transcripts)
         reading_line_count = len(feed_items)
-
-    hero_col1, hero_col2 = st.columns([5, 1])
-
-    with hero_col1:
-        render_live_feed_panel(
-            visible_feed_items,
-            selected_flow_language,
-            status_metadata,
-            meeting_name_display,
-            meeting_topic_display,
-            st.session_state.is_recording
+        latest_latency = f"{transcripts[-1]['latency']:.1f}s" if transcripts else "Waiting"
+        duration_value = f"{recording_stats.get('duration', 0.0):.1f}s"
+        cost_value = f"${api_stats.get('estimated_cost', 0.0):.4f}"
+        queue_value = (
+            f"{st.session_state.worker.get_queue_size()} queued"
+            if st.session_state.worker
+            else "Idle"
         )
-        if hidden_feed_items > 0:
-            st.caption(
-                f"Reading Flow 僅顯示最近 {len(visible_feed_items)} 段內容，以保持長時間錄音穩定。更早內容仍保留在逐字稿資料與匯出檔案中。"
+        worker_value = (
+            "Running"
+            if st.session_state.worker and st.session_state.worker.is_running
+            else "Standby"
+        )
+
+        flow_selector_col, flow_selector_spacer = st.columns([2.3, 3.7])
+        with flow_selector_col:
+            st.markdown("<div class='section-label'>Reading Flow Language</div>", unsafe_allow_html=True)
+            if st.session_state.get('reading_flow_language_widget') not in flow_language_options:
+                st.session_state.reading_flow_language_widget = selected_flow_language
+            selected_flow_language = st.selectbox(
+                "Reading Flow Language",
+                flow_language_options,
+                format_func=get_language_label,
+                key='reading_flow_language_widget',
+                label_visibility="collapsed"
+            )
+            st.session_state.reading_flow_language = selected_flow_language
+            selected_flow_label = get_language_label(selected_flow_language)
+            feed_items = get_feed_items(transcripts, selected_flow_language)
+            visible_feed_items, hidden_feed_items = limit_visible_items(feed_items, MAX_VISIBLE_FEED_ITEMS)
+            reading_line_count = len(feed_items)
+
+        hero_col1, hero_col2 = st.columns([5, 1])
+
+        with hero_col1:
+            render_live_feed_panel(
+                visible_feed_items,
+                selected_flow_language,
+                status_metadata,
+                meeting_name_display,
+                meeting_topic_display,
+                st.session_state.is_recording
+            )
+            if hidden_feed_items > 0:
+                st.caption(
+                    f"Reading Flow 僅顯示最近 {len(visible_feed_items)} 段內容，以保持長時間錄音穩定。更早內容仍保留在逐字稿資料與匯出檔案中。"
+                )
+
+        with hero_col2:
+            st.markdown(
+                f"""
+                <div class='status-panel'>
+                    <div class='status-panel-title'>Session status</div>
+                    {status_badge_html}
+                    <div class='status-panel-value'>{html_module.escape(status_metadata['label'])}</div>
+                    <div class='status-panel-copy'>{html_module.escape(status_metadata['description'])}</div>
+                    <div class='status-grid'>
+                        <div class='status-mini'>
+                            <div class='status-mini-label'>Latency</div>
+                            <div class='status-mini-value'>{html_module.escape(latest_latency)}</div>
+                        </div>
+                        <div class='status-mini'>
+                            <div class='status-mini-label'>Reading Lines</div>
+                            <div class='status-mini-value'>{html_module.escape(str(reading_line_count))}</div>
+                        </div>
+                        <div class='status-mini'>
+                            <div class='status-mini-label'>Worker</div>
+                            <div class='status-mini-value'>{html_module.escape(worker_value)}</div>
+                        </div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
-    with hero_col2:
+        st.markdown("<div class='control-caption'>Quick Controls</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div class='control-note'>開始與停止按鍵已加重。開始時立刻建立新 session，停止時立即結束本輪錄音與翻譯。</div>",
+            unsafe_allow_html=True
+        )
+
+        col1, col2, col3, col_spacer = st.columns([2.1, 1.15, 2.1, 2.65])
+
+        with col1:
+            if st.button(
+                "▶ Start Recording Now" if not st.session_state.is_recording else "● Recording In Progress",
+                disabled=st.session_state.is_recording,
+                use_container_width=True,
+                type="primary"
+            ):
+                start_recording()
+                st.rerun(scope="app")
+
+        with col2:
+            if st.session_state.is_recording and not st.session_state.is_paused:
+                if st.button("⏸ Pause", use_container_width=True):
+                    pause_recording()
+                    st.rerun(scope="app")
+            elif st.session_state.is_recording and st.session_state.is_paused:
+                if st.button("▶ Resume", use_container_width=True):
+                    resume_recording()
+                    st.rerun(scope="app")
+
+        with col3:
+            if st.button(
+                "■ Stop Session",
+                disabled=not st.session_state.is_recording,
+                use_container_width=True,
+                type="primary" if st.session_state.is_recording else "secondary"
+            ):
+                stop_recording()
+                st.rerun(scope="app")
+
+        st.markdown("<div class='control-caption'>Session Snapshot</div>", unsafe_allow_html=True)
+        metric_cols = st.columns(4)
+        with metric_cols[0]:
+            render_metric_card("Mode", current_mode_label, get_mode_summary(current_mode, current_language, current_target_language), "accent-primary")
+        with metric_cols[1]:
+            render_metric_card(
+                "Audio Input",
+                selected_device_label,
+                f"Monitoring {current_language_label} speech, native output {current_target_language_label}, queue {queue_value}",
+                "accent-secondary"
+            )
+        with metric_cols[2]:
+            render_metric_card("Transcript Lines", str(transcript_count), f"{selected_flow_label} reading flow has {reading_line_count} lines", "accent-warm")
+        with metric_cols[3]:
+            render_metric_card(
+                "Whisper Cost",
+                cost_value,
+                f"{api_stats.get('total_calls', 0)} Whisper calls over {duration_value} · GPT {api_stats.get('translation_calls', 0)}x",
+                "accent-neutral"
+            )
+
+        live_chip = "<div class='section-chip'>Newest detailed card stays at the top</div>"
         st.markdown(
             f"""
-            <div class='status-panel'>
-                <div class='status-panel-title'>Session status</div>
-                {status_badge_html}
-                <div class='status-panel-value'>{html_module.escape(status_metadata['label'])}</div>
-                <div class='status-panel-copy'>{html_module.escape(status_metadata['description'])}</div>
-                <div class='status-grid'>
-                    <div class='status-mini'>
-                        <div class='status-mini-label'>Latency</div>
-                        <div class='status-mini-value'>{html_module.escape(latest_latency)}</div>
-                    </div>
-                    <div class='status-mini'>
-                        <div class='status-mini-label'>Reading Lines</div>
-                        <div class='status-mini-value'>{html_module.escape(str(reading_line_count))}</div>
-                    </div>
-                    <div class='status-mini'>
-                        <div class='status-mini-label'>Worker</div>
-                        <div class='status-mini-value'>{html_module.escape(worker_value)}</div>
+            <div class='section-head'>
+                <div>
+                    <div class='section-title'>Transcription Results</div>
+                    <div class='section-copy'>
+                        Detailed multilingual cards remain below. The reading panel above keeps the {html_module.escape(selected_flow_label)} flow in speaking order from top to bottom.
                     </div>
                 </div>
+                {live_chip}
             </div>
             """,
             unsafe_allow_html=True
         )
 
-    st.markdown("<div class='control-caption'>Quick Controls</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<div class='control-note'>開始與停止按鍵已加重。開始時立刻建立新 session，停止時立即結束本輪錄音與翻譯。</div>",
-        unsafe_allow_html=True
-    )
-
-    col1, col2, col3, col_spacer = st.columns([2.1, 1.15, 2.1, 2.65])
-
-    with col1:
-        if st.button(
-            "▶ Start Recording Now" if not st.session_state.is_recording else "● Recording In Progress",
-            disabled=st.session_state.is_recording,
-            use_container_width=True,
-            type="primary"
-        ):
-            start_recording()
-            st.rerun()
-
-    with col2:
-        if st.session_state.is_recording and not st.session_state.is_paused:
-            if st.button("⏸ Pause", use_container_width=True):
-                pause_recording()
-                st.rerun()
-        elif st.session_state.is_recording and st.session_state.is_paused:
-            if st.button("▶ Resume", use_container_width=True):
-                resume_recording()
-                st.rerun()
-
-    with col3:
-        if st.button(
-            "■ Stop Session",
-            disabled=not st.session_state.is_recording,
-            use_container_width=True,
-            type="primary" if st.session_state.is_recording else "secondary"
-        ):
-            stop_recording()
-            st.rerun()
-
-    st.markdown("<div class='control-caption'>Session Snapshot</div>", unsafe_allow_html=True)
-    metric_cols = st.columns(4)
-    with metric_cols[0]:
-        render_metric_card("Mode", current_mode_label, get_mode_summary(current_mode, current_language, current_target_language), "accent-primary")
-    with metric_cols[1]:
-        render_metric_card(
-            "Audio Input",
-            selected_device_label,
-            f"Monitoring {current_language_label} speech, native output {current_target_language_label}, queue {queue_value}",
-            "accent-secondary"
-        )
-    with metric_cols[2]:
-        render_metric_card("Transcript Lines", str(transcript_count), f"{selected_flow_label} reading flow has {reading_line_count} lines", "accent-warm")
-    with metric_cols[3]:
-        render_metric_card(
-            "Whisper Cost",
-            cost_value,
-            f"{api_stats.get('total_calls', 0)} Whisper calls over {duration_value} · GPT {api_stats.get('translation_calls', 0)}x",
-            "accent-neutral"
-        )
-
-    live_chip = "<div class='section-chip'>Newest detailed card stays at the top</div>"
-    st.markdown(
-        f"""
-        <div class='section-head'>
-            <div>
-                <div class='section-title'>Transcription Results</div>
-                <div class='section-copy'>
-                    Detailed multilingual cards remain below. The reading panel above keeps the {html_module.escape(selected_flow_label)} flow in speaking order from top to bottom.
+        if transcripts:
+            visible_transcripts, hidden_transcripts = limit_visible_items(transcripts, MAX_VISIBLE_TRANSCRIPT_CARDS)
+            if hidden_transcripts > 0:
+                st.caption(
+                    f"詳細卡片目前顯示最近 {len(visible_transcripts)} 筆結果。更早內容仍會保留在 session 與匯出檔案中。"
+                )
+            for item in visible_transcripts[::-1]:
+                render_transcript_card(item, st.session_state.show_bilingual)
+        else:
+            st.markdown(
+                """
+                <div class='empty-state'>
+                    <div class='empty-icon'>🎙</div>
+                    <div class='empty-title'>No transcription yet</div>
+                    <div class='empty-copy'>
+                        Start recording when the meeting begins. Source text and any enabled translations will appear here with timestamps and latency.
+                    </div>
                 </div>
-            </div>
-            {live_chip}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    if transcripts:
-        visible_transcripts, hidden_transcripts = limit_visible_items(transcripts, MAX_VISIBLE_TRANSCRIPT_CARDS)
-        if hidden_transcripts > 0:
-            st.caption(
-                f"詳細卡片目前顯示最近 {len(visible_transcripts)} 筆結果。更早內容仍會保留在 session 與匯出檔案中。"
+                """,
+                unsafe_allow_html=True
             )
-        for item in visible_transcripts[::-1]:
-            render_transcript_card(item, st.session_state.show_bilingual)
-    else:
-        st.markdown(
-            """
-            <div class='empty-state'>
-                <div class='empty-icon'>🎙</div>
-                <div class='empty-title'>No transcription yet</div>
-                <div class='empty-copy'>
-                    Start recording when the meeting begins. Source text and any enabled translations will appear here with timestamps and latency.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
 
-    # 停止後顯示下載按鈕
+
+    _render_live_content()
+
+    # 停止後顯示下載按鈕（重新讀取 transcripts，因為 fragment 內的變數不外流）
+    transcripts = st.session_state.controller.transcripts if st.session_state.controller else []
     if not st.session_state.is_recording and transcripts:
         st.divider()
         st.markdown(
@@ -1390,10 +1400,7 @@ def main():
     # 鍵盤快捷鍵
     render_keyboard_shortcuts()
 
-    # 自動重新整理（錄音中時）
-    if st.session_state.is_recording:
-        time.sleep(1)
-        st.rerun()
+    # 自動重新整理由 st.fragment(run_every=2s) 處理，不再需要全頁 sleep+rerun
 
 
 if __name__ == "__main__":

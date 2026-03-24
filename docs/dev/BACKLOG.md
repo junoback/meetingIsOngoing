@@ -22,7 +22,7 @@
 - **Risk**: Low (pure extraction, no behavior change)
 
 ### P1-03: Reduce st.rerun() flickering
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: Full page re-render every 1 second causes visible UI flicker during recording.
 - **Plan**: Investigate `st.fragment` (available since Streamlit 1.33) for partial re-renders of just the transcript area and status panel. Alternatively, increase refresh interval to 2-3 seconds with client-side JS updates for the feed panel.
 - **Effort**: Medium

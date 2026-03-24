@@ -5,17 +5,20 @@
 
 ---
 
-## 2026-03-24 — Session: Sprint 3 (Polish + Remaining Features)
+## 2026-03-24 — Session: Sprint 3+ (Polish + All Remaining Features)
 
 ### What was done
 - **P3-01**: Streaming WAV download — replaced `f.read()` with `open(file, 'rb')` for memory efficiency
 - **P3-03**: Keyboard shortcuts — Ctrl/Cmd+Shift+R/P/S for start/pause/stop via JS injection
 - **P2-04**: Session history & review — lists up to 20 past transcripts with expandable preview and download
+- **P3-02**: Mode/language switching during recording — mode radio, target language, and bilingual toggle enabled during recording; audio language stays locked for Whisper consistency
+- **P1-03**: Reduced flickering with `st.fragment` — main content area wrapped in fragment with `run_every=2s` during recording; removed `time.sleep(1); st.rerun()` loop; controls use `st.rerun(scope="app")`
 
 ### Decisions
 - Keyboard shortcuts use Ctrl+Shift (or Cmd+Shift on Mac) prefix to avoid conflicts with browser shortcuts
 - Session history only shown when not recording to avoid UI clutter during active sessions
-- Sprint 3 wraps up all low-hanging fruit; remaining items (P3-02, P2-05, P1-03) are higher risk/effort
+- P3-02: Audio language locked during recording (Whisper needs consistent source), but target language and mode can switch freely — Python GIL makes simple attribute assignment thread-safe
+- P1-03: st.fragment wraps live feed + status + controls + metrics + transcripts as one fragment; sidebar stats only update on user interaction (acceptable trade-off)
 
 ---
 
