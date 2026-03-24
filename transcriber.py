@@ -73,6 +73,10 @@ class Transcriber:
         self.stt_client = OpenAI(**stt_kwargs)
         self.stt_model = stt_cfg.get("model", "whisper-1")
 
+        # 只有 OpenAI Whisper 支援 audio.translations 端點
+        # Groq 等第三方只支援 audio.transcriptions
+        self.stt_supports_translation = stt_cfg.get("supports_translation", False)
+
         # 建立翻譯 client
         self.translation_type = trans_cfg.get("type", "openai_compatible")
         self.translation_model = trans_cfg.get("model", "gpt-4o-mini")
@@ -397,23 +401,36 @@ class Transcriber:
                 if self.mode == "translate_en":
                     if source_language == "en":
                         english_text = source_text
-                    else:
+                    elif self.stt_supports_translation:
+                        # OpenAI Whisper 原生 audio.translations 端點
                         audio_file.seek(0)
                         english_text = self._translate_audio_to_english(audio_file)
                         whisper_calls += 1
+                    else:
+                        # Groq 等不支援 translations — 用 LLM 翻譯
+                        english_text = self.translate_to_target_language(
+                            source_text, source_language, "en"
+                        )
                     texts['en'] = english_text
                     text = english_text
 
                 elif self.mode == "translate_target":
                     english_text = ""
-                    if source_language != "en":
+                    if source_language == "en":
+                        texts['en'] = source_text
+                        english_text = source_text
+                    elif self.stt_supports_translation:
+                        # OpenAI Whisper 原生 audio.translations 端點
                         audio_file.seek(0)
                         english_text = self._translate_audio_to_english(audio_file)
                         texts['en'] = english_text
                         whisper_calls += 1
                     else:
-                        texts['en'] = source_text
-                        english_text = source_text
+                        # Groq 等不支援 translations — 用 LLM 翻譯英文中繼
+                        english_text = self.translate_to_target_language(
+                            source_text, source_language, "en"
+                        )
+                        texts['en'] = english_text
 
                     if self.target_language == source_language:
                         target_text = source_text

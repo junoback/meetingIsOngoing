@@ -54,6 +54,7 @@ STT_PROVIDERS = {
         "name": "OpenAI Whisper",
         "base_url": None,
         "model": "whisper-1",
+        "supports_translation": True,  # 唯一支援 audio.translations 端點的 provider
         "key_help": "https://platform.openai.com/api-keys",
     },
     "groq_whisper": {
