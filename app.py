@@ -506,7 +506,9 @@ def start_recording():
 
         st.session_state.recorder.set_chunk_duration(st.session_state.chunk_duration)
         st.session_state.recorder.set_silence_threshold(st.session_state.silence_threshold)
-        add_debug_log(f"⚙️ 音訊片段長度：{st.session_state.chunk_duration}秒，靜音閾值：{st.session_state.silence_threshold}")
+        st.session_state.recorder.vad_enabled = st.session_state.get('vad_enabled', True)
+        vad_label = "VAD smart" if st.session_state.recorder.vad_enabled else "fixed"
+        add_debug_log(f"⚙️ 音訊片段長度：{st.session_state.chunk_duration}秒，靜音閾值：{st.session_state.silence_threshold}，切割模式：{vad_label}")
 
         # 初始化 Transcriber（每次都重新初始化以確保使用最新的 API Key）
         add_debug_log("🤖 正在初始化 Whisper API...")
@@ -757,6 +759,15 @@ def main():
             disabled=st.session_state.is_recording,
             help="低於此閾值的音訊片段將被跳過",
             key='silence_threshold'
+        )
+
+        # VAD 智能切割
+        vad_enabled = st.checkbox(
+            "Smart chunking (VAD)",
+            value=config_manager.get_setting('vad_enabled', True),
+            disabled=st.session_state.is_recording,
+            help="偵測語句間的停頓自動切割，避免在句子中間斷開。關閉則使用固定長度切割。",
+            key='vad_enabled'
         )
 
         st.divider()

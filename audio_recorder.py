@@ -29,10 +29,16 @@ class AudioRecorder:
         """
         self.sample_rate = sample_rate
         self.channels = channels
-        self.chunk_duration = 5  # 預設每 5 秒為一個片段
+        self.chunk_duration = 5  # 預設每 5 秒為一個片段（也作為 VAD 最大長度）
         self.silence_threshold = 0.01  # 靜音閾值
         self.device_index = None  # 音訊裝置索引
         self.device_name = None  # 音訊裝置名稱
+
+        # VAD 智能切割設定
+        self.vad_enabled = True  # 啟用 VAD 智能切割
+        self.vad_min_chunk = 3.0  # 最小 chunk 秒數，累積不足時不偵測靜音
+        self.vad_silence_duration = 0.3  # 靜音持續多久才視為斷句（秒）
+        self.vad_window_size = 0.1  # 能量偵測視窗大小（秒）
 
         # 錄音狀態
         self.is_recording = False
@@ -167,68 +173,135 @@ class AudioRecorder:
             # 將音訊資料添加到緩衝區
             self.audio_buffer.append(indata.copy())
 
+    def _extract_samples(self, num_samples: int) -> np.ndarray:
+        """從 audio_buffer 取出指定數量的 samples"""
+        chunk_data = []
+        remaining = num_samples
+        while remaining > 0 and self.audio_buffer:
+            data = self.audio_buffer.pop(0)
+            if len(data) <= remaining:
+                chunk_data.append(data)
+                remaining -= len(data)
+            else:
+                chunk_data.append(data[:remaining])
+                self.audio_buffer.insert(0, data[remaining:])
+                remaining = 0
+        return np.concatenate(chunk_data, axis=0)
+
+    def _buffer_sample_count(self) -> int:
+        """回傳目前 audio_buffer 的總 sample 數"""
+        return sum(len(chunk) for chunk in self.audio_buffer)
+
+    def _find_silence_boundary(self, audio: np.ndarray) -> int:
+        """
+        從 audio 尾端往前搜尋靜音邊界（用於 VAD 智能切割）。
+
+        回傳最佳切割點（sample index），如果找不到回傳 -1。
+        只在 vad_min_chunk 之後的區域搜尋。
+        """
+        window_samples = int(self.sample_rate * self.vad_window_size)
+        silence_windows_needed = int(self.vad_silence_duration / self.vad_window_size)
+        min_samples = int(self.sample_rate * self.vad_min_chunk)
+
+        if len(audio) <= min_samples or window_samples <= 0:
+            return -1
+
+        # 從尾端往前掃描，找連續靜音視窗
+        consecutive_silent = 0
+        # 搜尋範圍：從 min_samples 到 audio 結尾
+        search_start = min_samples
+        pos = len(audio) - window_samples
+
+        while pos >= search_start:
+            window = audio[pos:pos + window_samples]
+            rms = np.sqrt(np.mean(window ** 2))
+            if rms < self.silence_threshold:
+                consecutive_silent += 1
+                if consecutive_silent >= silence_windows_needed:
+                    # 找到靜音區段，切割點在靜音開始處
+                    boundary = pos + window_samples
+                    return min(boundary, len(audio))
+            else:
+                consecutive_silent = 0
+            pos -= window_samples
+
+        return -1
+
+    def _emit_chunk(self, audio_chunk: np.ndarray, duration: float):
+        """共用的 chunk 輸出邏輯：寫 WAV、靜音偵測、入隊"""
+        # 寫入 WAV 檔案
+        if self.wav_writer:
+            self.wav_writer.writeframes((audio_chunk * 32767).astype(np.int16).tobytes())
+
+        # 檢測是否為靜音
+        rms = np.sqrt(np.mean(audio_chunk ** 2))
+        self.last_rms = float(rms)
+        self.chunks_captured += 1
+        is_silent = self._is_silent(audio_chunk)
+
+        vad_tag = "[VAD]" if self.vad_enabled else "[FIX]"
+        print(f"🔊 {vad_tag} 音訊片段 {duration:.1f}s RMS: {rms:.6f}, 靜音: {is_silent}")
+
+        if not is_silent:
+            audio_bytes = self._numpy_to_wav_bytes(audio_chunk)
+            self.audio_queue.put({
+                'audio': audio_bytes,
+                'timestamp': datetime.now(),
+                'duration': duration
+            })
+            self.chunks_processed += 1
+            print(f"✅ 音訊片段已加入佇列（{duration:.1f}s, 總計：{self.chunks_processed}）")
+        else:
+            self.chunks_skipped_silence += 1
+            print(f"⏭️ 音訊片段因靜音被跳過")
+
+        self.total_duration += duration
+
     def _recording_loop(self):
         """錄音主迴圈（在獨立執行緒中執行）"""
-        samples_per_chunk = int(self.sample_rate * self.chunk_duration)
+        max_samples = int(self.sample_rate * self.chunk_duration)
+        min_samples = int(self.sample_rate * self.vad_min_chunk) if self.vad_enabled else max_samples
 
         while self.is_recording:
             if self.is_paused:
                 time.sleep(0.1)
                 continue
 
-            # 計算目前緩衝區的總樣本數
-            total_samples = sum(len(chunk) for chunk in self.audio_buffer)
+            total_samples = self._buffer_sample_count()
 
-            if total_samples >= samples_per_chunk:
-                # 取出足夠的音訊資料
-                chunk_data = []
-                remaining_samples = samples_per_chunk
+            if self.vad_enabled:
+                # VAD 模式：累積到 min_chunk 後開始尋找靜音邊界
+                if total_samples >= min_samples:
+                    # 先 peek 所有可用資料（最多 max_samples）
+                    peek_samples = min(total_samples, max_samples)
+                    # 暫時合併（不從 buffer 取出）
+                    peek_data = np.concatenate(self.audio_buffer, axis=0)[:peek_samples]
 
-                while remaining_samples > 0 and self.audio_buffer:
-                    data = self.audio_buffer.pop(0)
-                    if len(data) <= remaining_samples:
-                        chunk_data.append(data)
-                        remaining_samples -= len(data)
+                    boundary = self._find_silence_boundary(peek_data)
+
+                    if boundary > 0:
+                        # 找到靜音邊界，在此處切割
+                        audio_chunk = self._extract_samples(boundary)
+                        duration = len(audio_chunk) / self.sample_rate
+                        self._emit_chunk(audio_chunk, duration)
+                    elif total_samples >= max_samples:
+                        # 到達最大長度，強制切割
+                        audio_chunk = self._extract_samples(max_samples)
+                        duration = self.chunk_duration
+                        print(f"⚠️ [VAD] 未偵測到靜音邊界，強制切割 {duration:.1f}s")
+                        self._emit_chunk(audio_chunk, duration)
                     else:
-                        # 分割資料
-                        chunk_data.append(data[:remaining_samples])
-                        self.audio_buffer.insert(0, data[remaining_samples:])
-                        remaining_samples = 0
-
-                # 合併音訊資料
-                audio_chunk = np.concatenate(chunk_data, axis=0)
-
-                # 寫入 WAV 檔案
-                if self.wav_writer:
-                    self.wav_writer.writeframes((audio_chunk * 32767).astype(np.int16).tobytes())
-
-                # 檢測是否為靜音
-                rms = np.sqrt(np.mean(audio_chunk ** 2))
-                self.last_rms = float(rms)
-                self.chunks_captured += 1
-                is_silent = self._is_silent(audio_chunk)
-
-                print(f"🔊 音訊片段 RMS: {rms:.6f}, 靜音閾值: {self.silence_threshold:.6f}, 靜音: {is_silent}")
-
-                if not is_silent:
-                    # 將音訊片段放入佇列（轉為 BytesIO）
-                    audio_bytes = self._numpy_to_wav_bytes(audio_chunk)
-                    self.audio_queue.put({
-                        'audio': audio_bytes,
-                        'timestamp': datetime.now(),
-                        'duration': self.chunk_duration
-                    })
-                    self.chunks_processed += 1
-                    print(f"✅ 音訊片段已加入佇列（總計：{self.chunks_processed}）")
+                        # 還沒到最大長度，繼續累積
+                        time.sleep(0.05)
                 else:
-                    self.chunks_skipped_silence += 1
-                    print(f"⏭️ 音訊片段因靜音被跳過")
-
-                # 更新總時長
-                self.total_duration += self.chunk_duration
-
+                    time.sleep(0.1)
             else:
-                time.sleep(0.1)
+                # 傳統固定長度模式
+                if total_samples >= max_samples:
+                    audio_chunk = self._extract_samples(max_samples)
+                    self._emit_chunk(audio_chunk, self.chunk_duration)
+                else:
+                    time.sleep(0.1)
 
     def _numpy_to_wav_bytes(self, audio_data: np.ndarray) -> BytesIO:
         """

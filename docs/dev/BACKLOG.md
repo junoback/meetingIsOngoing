@@ -40,7 +40,7 @@
 ## Priority 2 — Feature Enhancements
 
 ### P2-01: Smart voice activity detection (VAD) for chunking
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: Fixed 5-10s chunks often cut mid-sentence, hurting translation quality.
 - **Plan**: Use `silero-vad` or energy-based VAD to detect speech boundaries. Fall back to max chunk length (15s) if no pause detected.
 - **Effort**: Medium-Large
