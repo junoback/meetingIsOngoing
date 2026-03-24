@@ -69,7 +69,12 @@ open_browser_when_ready() {
   for _ in {1..60}; do
     if is_port_ready "$python_bin"; then
       if [ "${AUTO_OPEN_BROWSER:-1}" != "0" ]; then
-        open "$APP_URL"
+        # 優先用 Chrome（Safari 對 Streamlit WebSocket 有相容性問題）
+        if open -a "Google Chrome" "$APP_URL" 2>/dev/null; then
+          echo "✅ Opened in Chrome: $APP_URL"
+        else
+          open "$APP_URL"
+        fi
       fi
       return 0
     fi
@@ -194,13 +199,25 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 
+# Port 被佔用但沒有 PID file → 殘留程序，自動清理
 if is_port_ready "$PYTHON_BIN"; then
-  echo "Port $PORT is already serving an app."
-  echo "URL: $APP_URL"
-  if [ "${AUTO_OPEN_BROWSER:-1}" != "0" ]; then
-    open "$APP_URL"
+  echo ""
+  echo "⚠️ Port $PORT is occupied but no PID file found (likely unclean shutdown)."
+  echo "   Attempting to free port..."
+  if command -v lsof >/dev/null 2>&1; then
+    PORT_PIDS="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+    for pid in ${(f)PORT_PIDS}; do
+      kill "$pid" 2>/dev/null || true
+    done
+    sleep 1
   fi
-  exit 0
+  if is_port_ready "$PYTHON_BIN"; then
+    echo "❌ Cannot free port $PORT. Check with: lsof -ti tcp:$PORT"
+    echo "Press any key to close..."
+    read -k 1
+    exit 1
+  fi
+  echo "✅ Port $PORT freed."
 fi
 
 # ============================================================================
@@ -226,4 +243,5 @@ fi
 exec "$PYTHON_BIN" -m streamlit run "$SCRIPT_DIR/app.py" \
   --server.headless true \
   --server.port "$PORT" \
-  --server.address "$HOST"
+  --server.address "$HOST" \
+  --server.enableWebsocketCompression false

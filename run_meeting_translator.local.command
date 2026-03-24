@@ -74,13 +74,56 @@ open_browser_when_ready() {
     for i in $(seq 1 60); do
         if is_port_ready; then
             if [ "${AUTO_OPEN_BROWSER:-1}" != "0" ]; then
-                open "$APP_URL"
+                # 優先用 Chrome（Safari 對 Streamlit WebSocket 有相容性問題）
+                if open -a "Google Chrome" "$APP_URL" 2>/dev/null; then
+                    echo "✅ 已在 Chrome 開啟 $APP_URL"
+                else
+                    open "$APP_URL"
+                    echo "✅ 已在預設瀏覽器開啟 $APP_URL"
+                fi
             fi
             return 0
         fi
         sleep 0.5
     done
     echo "⚠️ 瀏覽器自動開啟逾時，請手動開啟 $APP_URL"
+}
+
+kill_port_occupant() {
+    # 清除佔用指定 port 的殘留程序
+    if ! command -v lsof > /dev/null 2>&1; then
+        return 1
+    fi
+    local pids
+    pids="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+    if [ -z "$pids" ]; then
+        return 1
+    fi
+    echo "⚠️ 偵測到 port $PORT 被佔用，正在清除殘留程序..."
+    for pid in $pids; do
+        echo "   停止 PID $pid..."
+        kill "$pid" 2>/dev/null || true
+    done
+    # 等待程序結束
+    local i
+    for i in $(seq 1 10); do
+        pids="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+        if [ -z "$pids" ]; then
+            echo "✅ 殘留程序已清除"
+            return 0
+        fi
+        sleep 0.5
+    done
+    # 強制 kill
+    pids="$(lsof -ti tcp:"$PORT" 2>/dev/null || true)"
+    if [ -n "$pids" ]; then
+        for pid in $pids; do
+            kill -9 "$pid" 2>/dev/null || true
+        done
+        sleep 0.5
+    fi
+    echo "✅ 殘留程序已強制清除"
+    return 0
 }
 
 stop_pid() {
@@ -180,26 +223,31 @@ mkdir -p transcripts
 # 重複啟動偵測
 # ============================================================================
 
+# 清理舊的 PID file（程序可能已死但 PID file 殘留）
 if [ -f "$PID_FILE" ]; then
     EXISTING_PID="$(cat "$PID_FILE" 2>/dev/null)"
     if [ -n "${EXISTING_PID:-}" ] && kill -0 "$EXISTING_PID" 2>/dev/null; then
         echo "Meeting Translator 已在執行中（PID $EXISTING_PID）"
         echo "URL: $APP_URL"
         if [ "${AUTO_OPEN_BROWSER:-1}" != "0" ]; then
-            open "$APP_URL"
+            if open -a "Google Chrome" "$APP_URL" 2>/dev/null; then true; else open "$APP_URL"; fi
         fi
         exit 0
     fi
     rm -f "$PID_FILE"
 fi
 
+# Port 被佔用但沒有 PID file → 殘留程序，自動清理後啟動
 if is_port_ready; then
-    echo "Port $PORT 已有程式在監聽。"
-    echo "URL: $APP_URL"
-    if [ "${AUTO_OPEN_BROWSER:-1}" != "0" ]; then
-        open "$APP_URL"
+    echo ""
+    echo "⚠️ Port $PORT 被佔用但沒有對應的 PID 記錄（可能是上次未正常關閉）"
+    kill_port_occupant
+    sleep 1
+    if is_port_ready; then
+        echo "❌ 無法釋放 port $PORT，請手動檢查：lsof -ti tcp:$PORT"
+        read -p "按 Enter 關閉..."
+        exit 1
     fi
-    exit 0
 fi
 
 # ============================================================================
@@ -225,4 +273,5 @@ fi
 exec .venv/bin/streamlit run app.py \
     --server.headless true \
     --server.port "$PORT" \
-    --server.address "$HOST"
+    --server.address "$HOST" \
+    --server.enableWebsocketCompression false
