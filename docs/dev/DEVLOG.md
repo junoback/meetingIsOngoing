@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-03-24 — Session: Sprint Complete (P1-01, P1-02, P1-04) + Launch/Stop Commands
+
+### What was done
+- **P1-02**: Extracted HTML template builders → `templates.py` (536 lines)
+  - Constants, lookup helpers, data helpers, 5 HTML builders moved from app.py
+- **P1-01**: Extracted ~900 lines of inline CSS → `styles.py` with `get_main_css()`
+- **P1-04**: Added circuit breaker to `TranscriberWorker`
+  - 3 consecutive failures → trip, 10s initial backoff, 2x exponential up to 300s
+  - Half-open auto-retry after cooldown, UI status display in sidebar
+- **Launch/Stop commands**: Rewrote `run_meeting_translator.command` (PID file, auto browser open, duplicate launch protection), created `stop_meeting_translator.command`
+- **app.py**: Reduced from ~2550 → ~1175 lines
+
+### File structure after this session
+```
+app.py           (1175 lines) — session state, control flow, main UI
+styles.py        (940 lines)  — all CSS via get_main_css()
+templates.py     (536 lines)  — HTML builders, constants, lookup/data helpers
+transcriber.py   (530 lines)  — Whisper API, GPT translation, circuit breaker
+audio_recorder.py              — audio capture (unchanged)
+config_manager.py              — config persistence (unchanged)
+```
+
+### Decisions
+- Constants and lookup helpers moved to templates.py (not app.py) to avoid circular imports
+- Circuit breaker lives in TranscriberWorker (not ProcessingController) since it's closest to the API call boundary
+- Sprint fully complete; next sprint should start from P2 features
+
+---
+
 ## 2026-03-23 — Session: Bug Fix + Dev Infrastructure + Skills
 
 ### What was done (continued)
