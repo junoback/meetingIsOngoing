@@ -188,13 +188,21 @@ def get_status_metadata():
 
 
 
-def create_live_transcript_file(meeting_name: str = "", meeting_topic: str = "") -> str:
+def create_live_transcript_file(
+    meeting_name: str = "",
+    meeting_topic: str = "",
+    recording_file_path: str = ""
+) -> str:
     """
     創建即時逐字稿檔案（錄音開始時調用）
+
+    檔名與錄音檔對應（同 base name，不同目錄與副檔名），
+    方便事後對照音檔與文字記錄。
 
     Args:
         meeting_name: 會議名稱
         meeting_topic: 會議主題
+        recording_file_path: 對應的錄音檔路徑（用來衍生一致的檔名）
 
     Returns:
         檔案路徑
@@ -202,28 +210,34 @@ def create_live_transcript_file(meeting_name: str = "", meeting_topic: str = "")
     transcripts_dir = Path("transcripts")
     transcripts_dir.mkdir(exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # 與錄音檔共用 base name（僅副檔名不同）
+    if recording_file_path:
+        base_name = Path(recording_file_path).stem  # e.g. "每週例會_主題_20260324_151153"
+        filename = f"{base_name}.txt"
+    else:
+        # fallback：獨立生成（不應走到這裡）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename_parts = ["transcript"]
+        if meeting_name:
+            filename_parts.append(sanitize_filename(meeting_name))
+        if meeting_topic:
+            filename_parts.append(sanitize_filename(meeting_topic))
+        filename_parts.append(timestamp)
+        filename = "_".join(filename_parts) + ".txt"
 
-    # 構建檔案名稱
-    filename_parts = ["live_transcript"]
-    if meeting_name:
-        filename_parts.append(sanitize_filename(meeting_name))
-    if meeting_topic:
-        filename_parts.append(sanitize_filename(meeting_topic))
-    filename_parts.append(timestamp)
-
-    filename = "_".join(filename_parts) + ".txt"
     file_path = transcripts_dir / filename
 
     # 寫入標題
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write("=" * 60 + "\n")
-        f.write("即時會議逐字稿\n")
+        f.write("即時會議逐字稿 — Real-time Meeting Transcript\n")
         if meeting_name:
             f.write(f"會議名稱：{meeting_name}\n")
         if meeting_topic:
             f.write(f"會議主題：{meeting_topic}\n")
         f.write(f"開始時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        if recording_file_path:
+            f.write(f"對應錄音：{Path(recording_file_path).name}\n")
         f.write("=" * 60 + "\n\n")
 
     return str(file_path)
@@ -665,11 +679,12 @@ def start_recording():
             st.session_state.worker
         )
 
-        # 創建即時逐字稿檔案
+        # 創建即時逐字稿檔案（與錄音檔對應）
         add_debug_log("📝 正在創建即時逐字稿檔案...")
         live_transcript_path = create_live_transcript_file(
             meeting_name=st.session_state.meeting_name,
-            meeting_topic=st.session_state.meeting_topic
+            meeting_topic=st.session_state.meeting_topic,
+            recording_file_path=recording_file
         )
         st.session_state.controller.set_live_transcript_path(live_transcript_path)
         st.session_state.live_transcript_path = live_transcript_path
