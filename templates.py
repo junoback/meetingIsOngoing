@@ -62,12 +62,9 @@ STT_PROVIDERS = {
         "model": "whisper-large-v3-turbo",
         "key_help": "https://console.groq.com/keys",
     },
-    "xai_whisper": {
-        "name": "xAI Grok Whisper",
-        "base_url": "https://api.x.ai/v1",
-        "model": "whisper-large-v3-turbo",
-        "key_help": "https://console.x.ai",
-    },
+    # 注意：xAI 沒有 Whisper 相容的 /v1/audio/transcriptions 端點
+    # 他們只有 TTS (/v1/tts) 和即時語音 Agent (WebSocket wss://api.x.ai/v1/realtime)
+    # xAI key 只能用於翻譯（Grok chat completions），不能用於 STT
 }
 
 TRANSLATION_PROVIDERS = {
@@ -125,7 +122,6 @@ PROVIDER_KEY_GROUPS = {
     "gemini_flash": "google",
     "claude_haiku": "anthropic",
     "deepseek": "deepseek",
-    "xai_whisper": "xai",
     "xai_grok": "xai",
 }
 
