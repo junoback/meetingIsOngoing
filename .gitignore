@@ -35,5 +35,8 @@ transcripts/*.txt
 *.tmp
 .cache/
 
+# Runtime PID file
+.streamlit_app.pid
+
 # Claude Code internal
 .claude/
