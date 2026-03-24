@@ -47,7 +47,7 @@
 - **Risk**: Medium (new dependency, tuning needed)
 
 ### P2-02: SRT/VTT subtitle export
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: Users may want to import transcripts into video editing tools.
 - **Plan**: Add SRT and VTT export options alongside existing TXT.
 - **Effort**: Small

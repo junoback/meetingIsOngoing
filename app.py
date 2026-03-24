@@ -260,6 +260,131 @@ def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_t
     return str(file_path)
 
 
+def _format_srt_time(seconds: float) -> str:
+    """將秒數格式化為 SRT 時間碼 (HH:MM:SS,mmm)"""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def _format_vtt_time(seconds: float) -> str:
+    """將秒數格式化為 VTT 時間碼 (HH:MM:SS.mmm)"""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d}.{ms:03d}"
+
+
+def _timestamp_to_seconds(ts) -> float:
+    """將 datetime timestamp 轉為當天的秒數"""
+    return ts.hour * 3600 + ts.minute * 60 + ts.second
+
+
+def save_transcript_to_srt(
+    transcripts: list,
+    language_selection: str = "all",
+    meeting_name: str = "",
+    meeting_topic: str = ""
+) -> str:
+    """
+    將逐字稿儲存為 SRT 字幕檔
+
+    每個 chunk 為一個 subtitle entry，時間碼根據 timestamp 與 duration 計算。
+    """
+    transcripts_dir = Path("transcripts")
+    transcripts_dir.mkdir(exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename_parts = ["transcript"]
+    if meeting_name:
+        filename_parts.append(meeting_name.replace("/", "-").replace("\\", "-").replace(":", "-"))
+    filename_parts.append(timestamp)
+    filename = "_".join(filename_parts) + ".srt"
+    file_path = transcripts_dir / filename
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        for idx, item in enumerate(reversed(transcripts), 1):
+            start_sec = _timestamp_to_seconds(item['timestamp'])
+            end_sec = start_sec + item.get('duration', 5.0)
+
+            start_tc = _format_srt_time(start_sec)
+            end_tc = _format_srt_time(end_sec)
+
+            # 收集要顯示的文字
+            lines = []
+            if language_selection == "all":
+                for lc in get_transcript_language_order(item):
+                    text = get_text_for_language(item, lc)
+                    if text:
+                        lines.append(text)
+            else:
+                text = get_text_for_language(item, language_selection)
+                if text:
+                    lines.append(text)
+
+            if lines:
+                f.write(f"{idx}\n")
+                f.write(f"{start_tc} --> {end_tc}\n")
+                f.write("\n".join(lines) + "\n\n")
+
+    return str(file_path)
+
+
+def save_transcript_to_vtt(
+    transcripts: list,
+    language_selection: str = "all",
+    meeting_name: str = "",
+    meeting_topic: str = ""
+) -> str:
+    """
+    將逐字稿儲存為 WebVTT 字幕檔
+    """
+    transcripts_dir = Path("transcripts")
+    transcripts_dir.mkdir(exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename_parts = ["transcript"]
+    if meeting_name:
+        filename_parts.append(meeting_name.replace("/", "-").replace("\\", "-").replace(":", "-"))
+    filename_parts.append(timestamp)
+    filename = "_".join(filename_parts) + ".vtt"
+    file_path = transcripts_dir / filename
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write("WEBVTT\n")
+        if meeting_name or meeting_topic:
+            note_parts = [p for p in [meeting_name, meeting_topic] if p]
+            f.write(f"NOTE {' — '.join(note_parts)}\n")
+        f.write("\n")
+
+        for idx, item in enumerate(reversed(transcripts), 1):
+            start_sec = _timestamp_to_seconds(item['timestamp'])
+            end_sec = start_sec + item.get('duration', 5.0)
+
+            start_tc = _format_vtt_time(start_sec)
+            end_tc = _format_vtt_time(end_sec)
+
+            lines = []
+            if language_selection == "all":
+                for lc in get_transcript_language_order(item):
+                    text = get_text_for_language(item, lc)
+                    if text:
+                        lines.append(text)
+            else:
+                text = get_text_for_language(item, language_selection)
+                if text:
+                    lines.append(text)
+
+            if lines:
+                f.write(f"{start_tc} --> {end_tc}\n")
+                f.write("\n".join(lines) + "\n\n")
+
+    return str(file_path)
+
+
 class ProcessingController:
     """處理控制器（避免在子執行緒中訪問 st.session_state）"""
 
@@ -1127,20 +1252,48 @@ def main():
                 key='download_language_selection'
             )
 
+            export_format = st.selectbox(
+                "Format",
+                ["TXT", "SRT", "VTT"],
+                key='export_format_selection'
+            )
+
             if st.button("Generate File", use_container_width=True, type="primary"):
-                file_path = save_transcript_to_file(
-                    transcripts,
-                    meeting_name=st.session_state.meeting_name,
-                    meeting_topic=st.session_state.meeting_topic,
-                    language_selection=selected_language
-                )
+                meeting_name_val = st.session_state.meeting_name
+                meeting_topic_val = st.session_state.meeting_topic
+
+                if export_format == "SRT":
+                    file_path = save_transcript_to_srt(
+                        transcripts,
+                        language_selection=selected_language,
+                        meeting_name=meeting_name_val,
+                        meeting_topic=meeting_topic_val
+                    )
+                    mime_type = "application/x-subrip"
+                elif export_format == "VTT":
+                    file_path = save_transcript_to_vtt(
+                        transcripts,
+                        language_selection=selected_language,
+                        meeting_name=meeting_name_val,
+                        meeting_topic=meeting_topic_val
+                    )
+                    mime_type = "text/vtt"
+                else:
+                    file_path = save_transcript_to_file(
+                        transcripts,
+                        meeting_name=meeting_name_val,
+                        meeting_topic=meeting_topic_val,
+                        language_selection=selected_language
+                    )
+                    mime_type = "text/plain"
+
                 with open(file_path, 'r', encoding='utf-8') as f:
                     transcript_content = f.read()
                 st.download_button(
-                    label="Download TXT",
+                    label=f"Download {export_format}",
                     data=transcript_content,
                     file_name=Path(file_path).name,
-                    mime="text/plain",
+                    mime=mime_type,
                     use_container_width=True
                 )
                 st.success(f"File generated: {Path(file_path).name}")
