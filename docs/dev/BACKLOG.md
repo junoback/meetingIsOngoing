@@ -29,7 +29,7 @@
 - **Risk**: Medium (Streamlit fragment API may have limitations)
 
 ### P1-04: Circuit breaker for API failures
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: If OpenAI API goes down, the app keeps retrying every chunk without escalating backoff.
 - **Plan**: After N consecutive failures, pause API calls for exponential backoff period. Show clear error state in UI.
 - **Effort**: Small

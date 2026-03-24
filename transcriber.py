@@ -365,6 +365,12 @@ class Transcriber:
 class TranscriberWorker:
     """語音轉文字背景工作器（在獨立執行緒中執行）"""
 
+    # Circuit breaker 設定
+    CB_FAILURE_THRESHOLD = 3       # 連續失敗幾次後觸發
+    CB_INITIAL_BACKOFF = 10        # 初始冷卻秒數
+    CB_MAX_BACKOFF = 300           # 最大冷卻秒數（5 分鐘）
+    CB_BACKOFF_MULTIPLIER = 2      # 指數退避倍率
+
     def __init__(self, transcriber: Transcriber):
         """
         初始化背景工作器
@@ -379,6 +385,12 @@ class TranscriberWorker:
         # 輸入和輸出佇列
         self.input_queue = queue.Queue()  # 待處理的音訊片段
         self.output_queue = queue.Queue()  # 處理完成的結果
+
+        # Circuit breaker 狀態
+        self._consecutive_failures = 0
+        self._circuit_open = False          # True = 熔斷中，暫停 API 呼叫
+        self._circuit_reopen_at = 0.0       # 熔斷結束的 time.time()
+        self._current_backoff = self.CB_INITIAL_BACKOFF
 
     def start(self):
         """啟動背景工作器"""
@@ -396,12 +408,72 @@ class TranscriberWorker:
             self.worker_thread.join(timeout=2)
             self.worker_thread = None
 
+    def _record_success(self):
+        """API 呼叫成功時重置 circuit breaker"""
+        self._consecutive_failures = 0
+        if self._circuit_open:
+            print("🟢 Circuit breaker 已恢復（API 重新正常）")
+            self._circuit_open = False
+            self._current_backoff = self.CB_INITIAL_BACKOFF
+
+    def _record_failure(self):
+        """API 呼叫失敗時更新 circuit breaker 計數"""
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= self.CB_FAILURE_THRESHOLD and not self._circuit_open:
+            self._circuit_open = True
+            self._circuit_reopen_at = time.time() + self._current_backoff
+            print(
+                f"🔴 Circuit breaker 觸發！連續 {self._consecutive_failures} 次失敗，"
+                f"暫停 API 呼叫 {self._current_backoff}s"
+            )
+            # 發送熔斷事件到輸出佇列，讓 UI 顯示
+            self.output_queue.put({
+                'success': False,
+                'error': f"Circuit breaker: API 連續失敗 {self._consecutive_failures} 次，暫停 {self._current_backoff}s 後自動重試",
+                'circuit_breaker': True
+            })
+            # 下次觸發時退避時間加倍
+            self._current_backoff = min(
+                self._current_backoff * self.CB_BACKOFF_MULTIPLIER,
+                self.CB_MAX_BACKOFF
+            )
+
+    def _is_circuit_open(self) -> bool:
+        """檢查 circuit breaker 是否仍處於熔斷狀態"""
+        if not self._circuit_open:
+            return False
+        if time.time() >= self._circuit_reopen_at:
+            # 冷卻結束，進入 half-open 狀態（允許嘗試一次）
+            print("🟡 Circuit breaker 冷卻結束，嘗試半開放狀態...")
+            self._circuit_open = False
+            return False
+        return True
+
+    def get_circuit_breaker_status(self) -> dict:
+        """回傳 circuit breaker 狀態（供 UI 查詢）"""
+        remaining = max(0, self._circuit_reopen_at - time.time()) if self._circuit_open else 0
+        return {
+            'is_open': self._circuit_open,
+            'consecutive_failures': self._consecutive_failures,
+            'remaining_seconds': round(remaining, 1),
+            'current_backoff': self._current_backoff
+        }
+
     def _worker_loop(self):
         """工作器主迴圈"""
         print("🚀 Worker 執行緒已啟動")
 
         while self.is_running:
             try:
+                # Circuit breaker 熔斷中 — 跳過 API 呼叫，丟棄 chunk
+                if self._is_circuit_open():
+                    try:
+                        self.input_queue.get(timeout=0.5)
+                        # 丟棄此 chunk，等冷卻結束再恢復
+                    except queue.Empty:
+                        pass
+                    continue
+
                 # 從輸入佇列取得音訊片段（超時 0.5 秒）
                 chunk = self.input_queue.get(timeout=0.5)
 
@@ -414,7 +486,12 @@ class TranscriberWorker:
                 )
 
                 if result:
-                    print(f"✅ API 呼叫成功：{result.get('text', '')[:50]}")
+                    if result.get('success', True):
+                        print(f"✅ API 呼叫成功：{result.get('text', '')[:50]}")
+                        self._record_success()
+                    else:
+                        print(f"⚠️ API 呼叫失敗：{result.get('error', '')}")
+                        self._record_failure()
                     # 添加時間戳記
                     result['timestamp'] = chunk['timestamp']
                     # 放入輸出佇列
@@ -426,6 +503,7 @@ class TranscriberWorker:
                 continue
             except Exception as e:
                 print(f"❌ 工作器錯誤：{e}")
+                self._record_failure()
                 import traceback
                 traceback.print_exc()
 

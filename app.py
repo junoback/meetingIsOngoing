@@ -789,6 +789,21 @@ def main():
                     st.metric("Queue", f"{queue_size} chunks")
                     st.metric("Worker", worker_status)
 
+                    # Circuit breaker 狀態
+                    cb_status = st.session_state.worker.get_circuit_breaker_status()
+                    if cb_status['is_open']:
+                        st.error(
+                            f"⚡ Circuit Breaker OPEN — API 連續失敗 {cb_status['consecutive_failures']} 次，"
+                            f"剩餘冷卻 {cb_status['remaining_seconds']}s",
+                            icon="🔴"
+                        )
+                    elif cb_status['consecutive_failures'] > 0:
+                        remaining_until_trip = TranscriberWorker.CB_FAILURE_THRESHOLD - cb_status['consecutive_failures']
+                        st.warning(
+                            f"API 連續失敗 {cb_status['consecutive_failures']} 次"
+                            f"（再 {remaining_until_trip} 次觸發熔斷）"
+                        )
+
             st.divider()
 
         # 錯誤訊息（從 controller 獲取）

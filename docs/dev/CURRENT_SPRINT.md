@@ -28,14 +28,19 @@
 - **Result**: Created `templates.py` (536 lines). Moved constants, lookup helpers, data helpers, and 5 HTML builders. app.py reduced from 2550 → 2063 lines.
 
 ### 4. [P1-04] Circuit breaker for API failures
-- **Status**: `[ ]` Not started
+- **Status**: `[x]` Done (2026-03-24)
 - **Target**: Add exponential backoff after 3 consecutive failures
+- **Result**: Added to `TranscriberWorker`. 3 consecutive failures → circuit open, 10s initial backoff, 2x exponential up to 300s max. Half-open auto-retry on cooldown. UI shows status in sidebar.
 
 ## Blocked / Deferred
 - P1-03 (st.fragment) deferred to next sprint — needs Streamlit version check first
 
 ## Session Handoff Notes
-P1-01 (CSS extraction) and P1-02 (HTML template extraction) both complete.
-app.py now 1163 lines (down from original ~2550), focused on session state + control flow.
-styles.py holds all CSS, templates.py holds all HTML builders + constants + helpers.
-Next task: P1-04 (circuit breaker for API failures).
+**Sprint complete!** All P1 tasks done:
+- P1-01: CSS → styles.py
+- P1-02: HTML builders → templates.py
+- P1-04: Circuit breaker in TranscriberWorker
+- app.py reduced from ~2550 → ~1175 lines
+
+Next sprint should pick from P2 (feature enhancements) in BACKLOG.md.
+P1-03 (st.fragment) still deferred — needs Streamlit version check.
