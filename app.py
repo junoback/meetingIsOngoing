@@ -844,52 +844,39 @@ def main():
         current_language_index = language_options.index(current_language) if current_language in language_options else 0
         current_target_index = language_options.index(current_target_language) if current_target_language in language_options else 0
 
-        if st.session_state.is_recording:
-            # 錄音中：音源語言鎖定（Whisper 需要一致的來源語言）
-            st.selectbox(
-                "Audio Language",
-                language_options,
-                index=current_language_index,
-                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-                disabled=True,
-                help="🔒 Audio language is locked while recording — Whisper needs a consistent source language."
-            )
-            # 錄音中：目標語言可切換（翻譯即時更新）
-            if st.session_state.get('target_language_widget') not in language_options:
-                st.session_state.target_language_widget = current_target_language
-            selected_target_language = st.selectbox(
-                "Native Language",
-                language_options,
-                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-                help="✏️ You can change the output language while recording — takes effect on the next chunk.",
-                key='target_language_widget'
-            )
-            if selected_target_language != st.session_state.target_language:
-                st.session_state.target_language = selected_target_language
-                if st.session_state.transcriber:
-                    st.session_state.transcriber.set_target_language(selected_target_language)
-                    add_debug_log(f"🌐 錄音中切換目標語言：{selected_target_language}")
-        else:
-            if st.session_state.get('language_widget') not in language_options:
-                st.session_state.language_widget = current_language
-            selected_language = st.selectbox(
-                "Audio Language",
-                language_options,
-                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-                help="Select the language spoken in the meeting. Translation targets update automatically.",
-                key='language_widget'
-            )
+        # 音源語言（錄音中鎖定）
+        # 重要：兩個 branch 都使用相同的 key，確保 Streamlit widget tree 一致
+        if st.session_state.get('language_widget') not in language_options:
+            st.session_state.language_widget = current_language
+        selected_language = st.selectbox(
+            "Audio Language",
+            language_options,
+            format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
+            disabled=st.session_state.is_recording,
+            help="🔒 Locked while recording." if st.session_state.is_recording
+                 else "Select the language spoken in the meeting.",
+            key='language_widget'
+        )
+        if not st.session_state.is_recording:
             st.session_state.language = selected_language
 
-            if st.session_state.get('target_language_widget') not in language_options:
-                st.session_state.target_language_widget = current_target_language
-            selected_target_language = st.selectbox(
-                "Native Language",
-                language_options,
-                format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
-                help="Choose the language you want as your personal translation output.",
-                key='target_language_widget'
-            )
+        # 目標語言（錄音中也可切換）
+        if st.session_state.get('target_language_widget') not in language_options:
+            st.session_state.target_language_widget = current_target_language
+        selected_target_language = st.selectbox(
+            "Native Language",
+            language_options,
+            format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
+            help="✏️ Can be changed during recording." if st.session_state.is_recording
+                 else "Choose the language you want as your personal translation output.",
+            key='target_language_widget'
+        )
+        if selected_target_language != st.session_state.target_language:
+            st.session_state.target_language = selected_target_language
+            if st.session_state.is_recording and st.session_state.transcriber:
+                st.session_state.transcriber.set_target_language(selected_target_language)
+                add_debug_log(f"🌐 錄音中切換目標語言：{selected_target_language}")
+        elif not st.session_state.is_recording:
             st.session_state.target_language = selected_target_language
 
         mode_options = get_mode_options(st.session_state.language, st.session_state.target_language)
