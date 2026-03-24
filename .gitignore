@@ -41,5 +41,8 @@ transcripts/*.vtt
 # Runtime PID file
 .streamlit_app.pid
 
+# Streamlit config (本機設定，不同機器可能不同)
+.streamlit/
+
 # Claude Code internal
 .claude/

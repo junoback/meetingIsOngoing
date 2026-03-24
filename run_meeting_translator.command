@@ -9,7 +9,7 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 
 PID_FILE="$SCRIPT_DIR/.streamlit_app.pid"
 PORT="${STREAMLIT_PORT:-8501}"
-HOST="${STREAMLIT_HOST:-127.0.0.1}"
+HOST="${STREAMLIT_HOST:-0.0.0.0}"
 APP_URL="http://localhost:$PORT"
 
 if [ -f "$HOME/.zprofile" ]; then
@@ -225,13 +225,31 @@ fi
 # ============================================================================
 
 echo ""
-echo "======================================"
+echo "=============================================="
 echo "  🎙️ Meeting Translator 啟動中..."
-echo "  URL: $APP_URL"
+echo "=============================================="
+echo ""
+echo "  📍 本機連線："
+echo "     http://localhost:$PORT"
+echo ""
+
+# 取得區域網路 IP
+LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+if [ -n "${LAN_IP:-}" ]; then
+  echo "  📱 手機 / 同 WiFi 裝置："
+  echo "     http://$LAN_IP:$PORT"
+  echo ""
+fi
+
+# Parallels VM 常用閘道 IP
+echo "  💻 Parallels Windows VM："
+echo "     http://10.211.55.2:$PORT"
+echo ""
+echo "  ──────────────────────────────────────────"
 echo "  瀏覽器將自動開啟"
 echo "  Terminal 視窗保持開啟即可"
 echo "  停止請雙擊 stop_meeting_translator.command"
-echo "======================================"
+echo "=============================================="
 echo ""
 
 echo "$$" > "$PID_FILE"
