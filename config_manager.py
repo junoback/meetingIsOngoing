@@ -88,7 +88,7 @@ class ConfigManager:
 
     def get_api_key(self) -> Optional[str]:
         """
-        讀取 OpenAI API Key
+        讀取 OpenAI API Key（向後相容）
 
         Returns:
             API Key 字串，如果不存在則返回 None
@@ -98,7 +98,7 @@ class ConfigManager:
 
     def save_api_key(self, api_key: str) -> bool:
         """
-        儲存 OpenAI API Key
+        儲存 OpenAI API Key（向後相容）
 
         Args:
             api_key: API Key 字串
@@ -112,7 +112,7 @@ class ConfigManager:
 
     def clear_api_key(self) -> bool:
         """
-        清除 OpenAI API Key
+        清除 OpenAI API Key（向後相容）
 
         Returns:
             清除成功返回 True，失敗返回 False
@@ -120,6 +120,57 @@ class ConfigManager:
         config = self.load_config()
         if 'openai_api_key' in config:
             del config['openai_api_key']
+            return self.save_config(config)
+        return True
+
+    # ========================================================================
+    # 多 Provider API Key 管理
+    # ========================================================================
+
+    def get_provider_api_key(self, key_group: str) -> Optional[str]:
+        """
+        讀取指定 provider group 的 API Key
+
+        key_group: "openai", "groq", "deepl", "google", "anthropic"
+        """
+        config = self.load_config()
+        api_keys = config.get('api_keys', {})
+
+        # 優先從 api_keys dict 讀取
+        key = api_keys.get(key_group)
+        if key:
+            return key
+
+        # 向後相容：openai group 退回到舊的 openai_api_key
+        if key_group == "openai":
+            return config.get('openai_api_key')
+
+        return None
+
+    def save_provider_api_key(self, key_group: str, api_key: str) -> bool:
+        """儲存指定 provider group 的 API Key"""
+        config = self.load_config()
+        if 'api_keys' not in config:
+            config['api_keys'] = {}
+        config['api_keys'][key_group] = api_key
+
+        # 同時更新舊欄位（向後相容）
+        if key_group == "openai":
+            config['openai_api_key'] = api_key
+
+        return self.save_config(config)
+
+    def clear_provider_api_key(self, key_group: str) -> bool:
+        """清除指定 provider group 的 API Key"""
+        config = self.load_config()
+        api_keys = config.get('api_keys', {})
+        if key_group in api_keys:
+            del api_keys[key_group]
+            config['api_keys'] = api_keys
+
+            if key_group == "openai" and 'openai_api_key' in config:
+                del config['openai_api_key']
+
             return self.save_config(config)
         return True
 

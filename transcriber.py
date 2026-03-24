@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-語音轉文字模組 - 負責呼叫 OpenAI Whisper API 進行語音辨識和翻譯
+語音轉文字模組 - 支援多個 STT / 翻譯 Provider
+
+STT:  OpenAI Whisper, Groq Whisper
+翻譯: GPT-4o-mini, DeepL, Gemini Flash, Claude Haiku
 """
 
 import time
+import json
 import logging
 from io import BytesIO
 from typing import Optional, Dict, Literal
 from openai import OpenAI
 import threading
 import queue
+import urllib.request
+import urllib.error
 
 logger = logging.getLogger("meeting-translator")
 
@@ -27,48 +33,101 @@ LANGUAGE_LABELS_ZH = {
 
 
 class Transcriber:
-    """語音轉文字處理器類別"""
+    """語音轉文字處理器類別（支援多 Provider）"""
 
     # Whisper API 費用（每分鐘）
     API_COST_PER_MINUTE = 0.006  # $0.006 / minute
 
-    def __init__(self, api_key: str):
+    def __init__(
+        self,
+        stt_api_key: str,
+        stt_provider: str = "openai_whisper",
+        translation_api_key: str = "",
+        translation_provider: str = "openai_gpt",
+    ):
         """
         初始化語音轉文字處理器
 
         Args:
-            api_key: OpenAI API Key
+            stt_api_key: STT provider 的 API Key
+            stt_provider: STT provider 名稱（openai_whisper / groq_whisper）
+            translation_api_key: 翻譯 provider 的 API Key（空字串時與 STT 共用）
+            translation_provider: 翻譯 provider 名稱
         """
-        self.api_key = api_key
-        self.client = OpenAI(api_key=api_key)
-        self.mode = "transcribe"  # 預設模式：transcribe, translate_en, translate_target
-        self.language = "ja"  # 預設語言：日語
-        self.target_language = "zh"  # 預設目標語言：中文
+        # 延遲 import，避免 circular dependency
+        from templates import STT_PROVIDERS, TRANSLATION_PROVIDERS
+
+        self.stt_provider = stt_provider
+        self.translation_provider = translation_provider
+        self.stt_api_key = stt_api_key
+        self.translation_api_key = translation_api_key or stt_api_key
+
+        # 取得 provider 設定
+        stt_cfg = STT_PROVIDERS.get(stt_provider, STT_PROVIDERS["openai_whisper"])
+        trans_cfg = TRANSLATION_PROVIDERS.get(translation_provider, TRANSLATION_PROVIDERS["openai_gpt"])
+
+        # 建立 STT client（OpenAI SDK，Groq 也相容）
+        stt_kwargs = {"api_key": self.stt_api_key}
+        if stt_cfg.get("base_url"):
+            stt_kwargs["base_url"] = stt_cfg["base_url"]
+        self.stt_client = OpenAI(**stt_kwargs)
+        self.stt_model = stt_cfg.get("model", "whisper-1")
+
+        # 建立翻譯 client
+        self.translation_type = trans_cfg.get("type", "openai_compatible")
+        self.translation_model = trans_cfg.get("model", "gpt-4o-mini")
+        self.translation_base_url = trans_cfg.get("base_url")
+
+        if self.translation_type == "openai_compatible":
+            trans_kwargs = {"api_key": self.translation_api_key}
+            if self.translation_base_url:
+                trans_kwargs["base_url"] = self.translation_base_url
+            self.translation_client = OpenAI(**trans_kwargs)
+        else:
+            # DeepL / Anthropic — 用 urllib 直接呼叫 REST API
+            self.translation_client = None
+
+        self.mode = "transcribe"
+        self.language = "ja"
+        self.target_language = "zh"
 
         # 重試設定
         self.max_retries = 3
-        self.retry_delay = 1  # 秒
+        self.retry_delay = 1
 
         # 統計資訊
         self.total_api_calls = 0
-        self.total_audio_duration = 0  # 總音訊時長（秒）
+        self.total_audio_duration = 0
         self.failed_calls = 0
-        self.total_translation_calls = 0  # GPT 翻譯呼叫次數
+        self.total_translation_calls = 0
 
         # 翻譯優化
-        self.meeting_topic = ""  # 會議主題
-        self.terminology = {}  # 術語詞典 {原文: 翻譯}
-        self.previous_texts = []  # 上下文（最近的翻譯）
+        self.meeting_topic = ""
+        self.terminology = {}
+        self.previous_texts = []
+
+        logger.info(
+            "🔧 Transcriber 初始化：STT=%s (%s), 翻譯=%s (%s)",
+            stt_provider, self.stt_model,
+            translation_provider, self.translation_model or "REST"
+        )
+
+    # === 向後相容：舊的單一 api_key 建構方式 ===
+    @classmethod
+    def from_single_key(cls, api_key: str) -> "Transcriber":
+        """舊介面相容：只傳一把 OpenAI key，STT 和翻譯都用 OpenAI"""
+        return cls(
+            stt_api_key=api_key,
+            stt_provider="openai_whisper",
+            translation_api_key=api_key,
+            translation_provider="openai_gpt",
+        )
+
+    # ================================================================
+    # 設定方法
+    # ================================================================
 
     def set_mode(self, mode: Literal["transcribe", "translate_en", "translate_target", "translate_zh", "translate"]):
-        """
-        設定處理模式
-
-        Args:
-            mode: "transcribe" 表示轉錄為原語言文字
-                  "translate_en" 表示翻譯為英文
-                  "translate_target" 表示翻譯為目標語言
-        """
         if mode == "translate":
             mode = "translate_en"
         if mode == "translate_zh":
@@ -78,39 +137,23 @@ class Transcriber:
         self.mode = mode
 
     def set_language(self, language: str):
-        """
-        設定音訊語言
-
-        Args:
-            language: 語言代碼（例如 'ja', 'en', 'zh' 等）
-        """
         self.language = language
 
     def set_target_language(self, language: str):
-        """
-        設定目標語言
-
-        Args:
-            language: 目標語言代碼（例如 'zh', 'en', 'ja' 等）
-        """
         self.target_language = language
 
     def set_meeting_context(self, meeting_topic: str = "", terminology: dict = None):
-        """
-        設定會議上下文（用於提高翻譯準確性）
-
-        Args:
-            meeting_topic: 會議主題/類型
-            terminology: 術語詞典 {原文: 翻譯}
-        """
         self.meeting_topic = meeting_topic
         self.terminology = terminology or {}
         logger.info("📚 會議主題：%s", meeting_topic)
         if self.terminology:
             logger.info("📖 載入術語詞典：%d 個術語", len(self.terminology))
 
+    # ================================================================
+    # 文字提取
+    # ================================================================
+
     def _extract_text(self, response) -> str:
-        """將不同型態的 API 回應轉成字串"""
         if isinstance(response, str):
             return response.strip()
         if hasattr(response, "text"):
@@ -120,13 +163,16 @@ class Transcriber:
         return str(response).strip()
 
     def _get_source_language_label(self, language: str) -> str:
-        """回傳語言的中文名稱"""
         return LANGUAGE_LABELS_ZH.get(language, language.upper())
+
+    # ================================================================
+    # STT 方法（OpenAI / Groq — 都用 OpenAI SDK）
+    # ================================================================
 
     def _transcribe_source_text(self, audio_file: BytesIO) -> str:
         """以來源語言做逐字稿"""
-        response = self.client.audio.transcriptions.create(
-            model="whisper-1",
+        response = self.stt_client.audio.transcriptions.create(
+            model=self.stt_model,
             file=("audio.wav", audio_file, "audio/wav"),
             language=self.language,
             response_format="text"
@@ -134,13 +180,140 @@ class Transcriber:
         return self._extract_text(response)
 
     def _translate_audio_to_english(self, audio_file: BytesIO) -> str:
-        """將音訊翻譯為英文"""
-        response = self.client.audio.translations.create(
-            model="whisper-1",
+        """將音訊翻譯為英文（Whisper translations endpoint）"""
+        response = self.stt_client.audio.translations.create(
+            model=self.stt_model,
             file=("audio.wav", audio_file, "audio/wav"),
             response_format="text"
         )
         return self._extract_text(response)
+
+    # ================================================================
+    # 翻譯方法（多 Provider）
+    # ================================================================
+
+    def _build_translation_prompts(
+        self, source_text: str, source_language: str,
+        target_language: str, english_text: str = ""
+    ) -> tuple[str, str]:
+        """構建翻譯 system / user prompt（供 LLM 類 provider 共用）"""
+        source_label = self._get_source_language_label(source_language)
+        target_label = self._get_source_language_label(target_language)
+
+        system_prompt = f"你是專業的翻譯專家，請將文字翻譯成自然流暢的{target_label}。只返回翻譯結果，不要添加任何解釋或註解。"
+        if self.meeting_topic:
+            system_prompt += f"\n\n這是一場關於「{self.meeting_topic}」的會議，請使用相關的專業術語。"
+        if self.terminology:
+            terms_list = "\n".join([f"- {src} → {tgt}" for src, tgt in self.terminology.items()])
+            system_prompt += f"\n\nIMPORTANT — Use these exact translations for the following terms:\n{terms_list}"
+
+        if english_text and source_language != "en":
+            user_prompt = f"{source_label}原文：{source_text}\n英文參考：{english_text}\n\n請翻譯成{target_label}："
+        else:
+            user_prompt = f"{source_label}原文：{source_text}\n\n請翻譯成{target_label}："
+
+        if self.previous_texts:
+            context = "\n".join(self.previous_texts[-3:])
+            user_prompt = f"前文參考：\n{context}\n\n{user_prompt}"
+
+        return system_prompt, user_prompt
+
+    def _translate_with_openai_compatible(
+        self, source_text: str, source_language: str,
+        target_language: str, english_text: str = ""
+    ) -> str:
+        """使用 OpenAI 相容 API 翻譯（GPT / Gemini）"""
+        system_prompt, user_prompt = self._build_translation_prompts(
+            source_text, source_language, target_language, english_text
+        )
+        response = self.translation_client.chat.completions.create(
+            model=self.translation_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=500
+        )
+        return response.choices[0].message.content.strip()
+
+    def _translate_with_deepl(
+        self, source_text: str, source_language: str,
+        target_language: str, **_kwargs
+    ) -> str:
+        """使用 DeepL REST API 翻譯"""
+        from templates import DEEPL_LANGUAGE_MAP
+
+        target_lang_code = DEEPL_LANGUAGE_MAP.get(target_language, target_language.upper())
+        source_lang_code = DEEPL_LANGUAGE_MAP.get(source_language, source_language.upper())
+
+        # 構建 request payload
+        payload = json.dumps({
+            "text": [source_text],
+            "target_lang": target_lang_code,
+            "source_lang": source_lang_code,
+        }).encode("utf-8")
+
+        # 判斷是 Free 還是 Pro（Free key 結尾是 :fx）
+        if self.translation_api_key.endswith(":fx"):
+            url = "https://api-free.deepl.com/v2/translate"
+        else:
+            url = "https://api.deepl.com/v2/translate"
+
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Authorization": f"DeepL-Auth-Key {self.translation_api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        translations = data.get("translations", [])
+        if translations:
+            return translations[0].get("text", "").strip()
+        return ""
+
+    def _translate_with_anthropic(
+        self, source_text: str, source_language: str,
+        target_language: str, english_text: str = ""
+    ) -> str:
+        """使用 Anthropic Messages REST API 翻譯"""
+        system_prompt, user_prompt = self._build_translation_prompts(
+            source_text, source_language, target_language, english_text
+        )
+
+        payload = json.dumps({
+            "model": self.translation_model,
+            "max_tokens": 500,
+            "system": system_prompt,
+            "messages": [
+                {"role": "user", "content": user_prompt}
+            ],
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            headers={
+                "x-api-key": self.translation_api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        content_blocks = data.get("content", [])
+        if content_blocks:
+            return content_blocks[0].get("text", "").strip()
+        return ""
 
     def translate_to_target_language(
         self,
@@ -150,74 +323,53 @@ class Transcriber:
         english_text: str = ""
     ) -> str:
         """
-        使用 GPT API 將原文翻譯為指定語言
+        翻譯入口 — 依 translation_provider 派發到對應實作
 
         Args:
-            source_text: 原文文字
+            source_text: 原文
             source_language: 原文語言代碼
             target_language: 目標語言代碼
-            english_text: 英文參考（可選，用於輔助理解）
+            english_text: 英文參考（可選）
 
         Returns:
-            目標語言翻譯
+            翻譯結果文字
         """
         try:
+            if self.translation_type == "deepl":
+                translated = self._translate_with_deepl(
+                    source_text, source_language, target_language
+                )
+            elif self.translation_type == "anthropic":
+                translated = self._translate_with_anthropic(
+                    source_text, source_language, target_language, english_text
+                )
+            else:
+                # openai_compatible（GPT / Gemini）
+                translated = self._translate_with_openai_compatible(
+                    source_text, source_language, target_language, english_text
+                )
+
+            self.total_translation_calls += 1
+
             source_label = self._get_source_language_label(source_language)
             target_label = self._get_source_language_label(target_language)
 
-            # 構建 system prompt
-            system_prompt = f"你是專業的翻譯專家，請將文字翻譯成自然流暢的{target_label}。只返回翻譯結果，不要添加任何解釋或註解。"
-
-            # 如果有會議主題，加入上下文
-            if self.meeting_topic:
-                system_prompt += f"\n\n這是一場關於「{self.meeting_topic}」的會議，請使用相關的專業術語。"
-
-            # 如果有術語詞典，加入翻譯指引（適用所有目標語言）
-            if self.terminology:
-                terms_list = "\n".join([f"- {src} → {tgt}" for src, tgt in self.terminology.items()])
-                system_prompt += f"\n\nIMPORTANT — Use these exact translations for the following terms:\n{terms_list}"
-
-            # 構建 user prompt
-            if english_text and source_language != "en":
-                user_prompt = f"{source_label}原文：{source_text}\n英文參考：{english_text}\n\n請翻譯成{target_label}："
-            else:
-                user_prompt = f"{source_label}原文：{source_text}\n\n請翻譯成{target_label}："
-
-            # 如果有上下文，加入前幾句話作為參考
-            if self.previous_texts:
-                context = "\n".join(self.previous_texts[-3:])  # 最近 3 句
-                user_prompt = f"前文參考：\n{context}\n\n{user_prompt}"
-
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt
-                    },
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-                ],
-                temperature=0.3,
-                max_tokens=500
-            )
-
-            self.total_translation_calls += 1
-            translated_text = response.choices[0].message.content.strip()
-
-            # 儲存到上下文
-            self.previous_texts.append(f"{source_label}：{source_text}\n{target_label}：{translated_text}")
-            if len(self.previous_texts) > 10:  # 只保留最近 10 句
+            # 儲存到上下文（DeepL 也保留，給 LLM 切換時能接續）
+            self.previous_texts.append(f"{source_label}：{source_text}\n{target_label}：{translated}")
+            if len(self.previous_texts) > 10:
                 self.previous_texts = self.previous_texts[-10:]
 
-            logger.info("🈯 翻譯完成：%s → %s", source_text[:30], translated_text[:30])
-            return translated_text
+            logger.info("🈯 翻譯完成（%s）：%s → %s",
+                        self.translation_provider, source_text[:30], translated[:30])
+            return translated
 
         except Exception as e:
-            logger.error("❌ GPT 翻譯失敗：%s", e)
+            logger.error("❌ 翻譯失敗（%s）：%s", self.translation_provider, e)
             return f"[翻譯錯誤] {source_text}"
+
+    # ================================================================
+    # 主要轉錄流程
+    # ================================================================
 
     def transcribe_audio(self, audio_file: BytesIO, duration: float) -> Optional[Dict]:
         """
@@ -229,17 +381,13 @@ class Transcriber:
 
         Returns:
             結果字典，包含 text、mode、language、duration、latency 等資訊
-            多語言模式下會包含 texts 字典（包含所有語言版本）
-            如果失敗返回 None
         """
         start_time = time.time()
 
         for attempt in range(self.max_retries):
             try:
-                # 重設 BytesIO 的讀取位置
                 audio_file.seek(0)
 
-                # 先取得來源語言逐字稿，後續模式都以此為基礎
                 source_text = self._transcribe_source_text(audio_file)
                 texts = {self.language: source_text}
                 text = source_text
@@ -253,13 +401,11 @@ class Transcriber:
                         audio_file.seek(0)
                         english_text = self._translate_audio_to_english(audio_file)
                         whisper_calls += 1
-
                     texts['en'] = english_text
                     text = english_text
 
                 elif self.mode == "translate_target":
                     english_text = ""
-
                     if source_language != "en":
                         audio_file.seek(0)
                         english_text = self._translate_audio_to_english(audio_file)
@@ -275,37 +421,29 @@ class Transcriber:
                         target_text = english_text or source_text
                     else:
                         target_text = self.translate_to_target_language(
-                            source_text,
-                            source_language,
-                            self.target_language,
-                            english_text
+                            source_text, source_language,
+                            self.target_language, english_text
                         )
-
                     texts[self.target_language] = target_text
                     text = target_text
 
-                # 計算延遲時間
                 latency = time.time() - start_time
-
-                # 更新統計資訊
                 self.total_api_calls += whisper_calls
                 self.total_audio_duration += duration
 
-                # 如果文字為空，視為無效結果
                 if not text:
                     return None
 
-                # 判斷輸出語言
                 if self.mode == "transcribe":
                     output_language = source_language
                 elif self.mode == "translate_en":
                     output_language = "en"
-                else:  # translate_target
+                else:
                     output_language = self.target_language
 
                 return {
                     'text': text,
-                    'texts': texts,  # 所有語言版本，以語言代碼為 key
+                    'texts': texts,
                     'mode': self.mode,
                     'source_language': source_language,
                     'target_language': self.target_language,
@@ -317,13 +455,11 @@ class Transcriber:
 
             except Exception as e:
                 error_message = str(e)
-                logger.warning("API 呼叫失敗（第 %d/%d 次嘗試）：%s", attempt + 1, self.max_retries, error_message)
-
+                logger.warning("API 呼叫失敗（第 %d/%d 次嘗試）：%s",
+                               attempt + 1, self.max_retries, error_message)
                 if attempt < self.max_retries - 1:
-                    # 等待後重試
                     time.sleep(self.retry_delay)
                 else:
-                    # 最後一次嘗試失敗
                     self.failed_calls += 1
                     return {
                         'text': f"[錯誤] {error_message}",
@@ -337,22 +473,14 @@ class Transcriber:
 
         return None
 
-    def get_api_cost_estimate(self) -> float:
-        """
-        取得 API 費用估算
+    # ================================================================
+    # 統計
+    # ================================================================
 
-        Returns:
-            預估費用（美元）
-        """
+    def get_api_cost_estimate(self) -> float:
         return (self.total_audio_duration / 60) * self.API_COST_PER_MINUTE
 
     def get_stats(self) -> Dict:
-        """
-        取得統計資訊
-
-        Returns:
-            統計資訊字典
-        """
         return {
             'total_calls': self.total_api_calls,
             'translation_calls': self.total_translation_calls,
@@ -361,7 +489,9 @@ class Transcriber:
             'estimated_cost': round(self.get_api_cost_estimate(), 4),
             'mode': self.mode,
             'language': self.language,
-            'target_language': self.target_language
+            'target_language': self.target_language,
+            'stt_provider': self.stt_provider,
+            'translation_provider': self.translation_provider,
         }
 
 
@@ -369,43 +499,32 @@ class TranscriberWorker:
     """語音轉文字背景工作器（在獨立執行緒中執行）"""
 
     # Circuit breaker 設定
-    CB_FAILURE_THRESHOLD = 3       # 連續失敗幾次後觸發
-    CB_INITIAL_BACKOFF = 10        # 初始冷卻秒數
-    CB_MAX_BACKOFF = 300           # 最大冷卻秒數（5 分鐘）
-    CB_BACKOFF_MULTIPLIER = 2      # 指數退避倍率
+    CB_FAILURE_THRESHOLD = 3
+    CB_INITIAL_BACKOFF = 10
+    CB_MAX_BACKOFF = 300
+    CB_BACKOFF_MULTIPLIER = 2
 
     def __init__(self, transcriber: Transcriber):
-        """
-        初始化背景工作器
-
-        Args:
-            transcriber: Transcriber 實例
-        """
         self.transcriber = transcriber
         self.is_running = False
         self.worker_thread = None
-
-        # 輸入和輸出佇列
-        self.input_queue = queue.Queue()  # 待處理的音訊片段
-        self.output_queue = queue.Queue()  # 處理完成的結果
+        self.input_queue = queue.Queue()
+        self.output_queue = queue.Queue()
 
         # Circuit breaker 狀態
         self._consecutive_failures = 0
-        self._circuit_open = False          # True = 熔斷中，暫停 API 呼叫
-        self._circuit_reopen_at = 0.0       # 熔斷結束的 time.time()
+        self._circuit_open = False
+        self._circuit_reopen_at = 0.0
         self._current_backoff = self.CB_INITIAL_BACKOFF
 
     def start(self):
-        """啟動背景工作器"""
         if self.is_running:
             return
-
         self.is_running = True
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
         self.worker_thread.start()
 
     def stop(self):
-        """停止背景工作器"""
         self.is_running = False
         if self.worker_thread:
             self.worker_thread.join(timeout=2)
@@ -419,7 +538,6 @@ class TranscriberWorker:
             logger.info("🟢 Circuit breaker 已恢復（API 重新正常）")
             self._circuit_open = False
         if was_degraded:
-            # half-open 成功後或連續失敗歸零時，重置退避時間
             self._current_backoff = self.CB_INITIAL_BACKOFF
 
     def _record_failure(self):
@@ -432,31 +550,26 @@ class TranscriberWorker:
                 "🔴 Circuit breaker 觸發！連續 %d 次失敗，暫停 API 呼叫 %ds",
                 self._consecutive_failures, self._current_backoff
             )
-            # 發送熔斷事件到輸出佇列，讓 UI 顯示
             self.output_queue.put({
                 'success': False,
                 'error': f"Circuit breaker: API 連續失敗 {self._consecutive_failures} 次，暫停 {self._current_backoff}s 後自動重試",
                 'circuit_breaker': True
             })
-            # 下次觸發時退避時間加倍
             self._current_backoff = min(
                 self._current_backoff * self.CB_BACKOFF_MULTIPLIER,
                 self.CB_MAX_BACKOFF
             )
 
     def _is_circuit_open(self) -> bool:
-        """檢查 circuit breaker 是否仍處於熔斷狀態"""
         if not self._circuit_open:
             return False
         if time.time() >= self._circuit_reopen_at:
-            # 冷卻結束，進入 half-open 狀態（允許嘗試一次）
             logger.info("🟡 Circuit breaker 冷卻結束，嘗試半開放狀態...")
             self._circuit_open = False
             return False
         return True
 
     def get_circuit_breaker_status(self) -> dict:
-        """回傳 circuit breaker 狀態（供 UI 查詢）"""
         remaining = max(0, self._circuit_reopen_at - time.time()) if self._circuit_open else 0
         return {
             'is_open': self._circuit_open,
@@ -466,29 +579,21 @@ class TranscriberWorker:
         }
 
     def _worker_loop(self):
-        """工作器主迴圈"""
         logger.info("🚀 Worker 執行緒已啟動")
-
         while self.is_running:
             try:
-                # Circuit breaker 熔斷中 — 跳過 API 呼叫，丟棄 chunk
                 if self._is_circuit_open():
                     try:
                         self.input_queue.get(timeout=0.5)
-                        # 丟棄此 chunk，等冷卻結束再恢復
                     except queue.Empty:
                         pass
                     continue
 
-                # 從輸入佇列取得音訊片段（超時 0.5 秒）
                 chunk = self.input_queue.get(timeout=0.5)
-
                 logger.debug("📥 Worker 收到音訊片段，準備呼叫 API...")
 
-                # 呼叫 Whisper API
                 result = self.transcriber.transcribe_audio(
-                    chunk['audio'],
-                    chunk['duration']
+                    chunk['audio'], chunk['duration']
                 )
 
                 if result:
@@ -498,9 +603,7 @@ class TranscriberWorker:
                     else:
                         logger.warning("⚠️ API 呼叫失敗：%s", result.get('error', ''))
                         self._record_failure()
-                    # 添加時間戳記
                     result['timestamp'] = chunk['timestamp']
-                    # 放入輸出佇列
                     self.output_queue.put(result)
                 else:
                     logger.debug("⚠️ API 返回空結果")
@@ -514,34 +617,13 @@ class TranscriberWorker:
         logger.info("⏹️ Worker 執行緒已停止")
 
     def add_audio_chunk(self, audio_chunk: Dict):
-        """
-        添加音訊片段到處理佇列
-
-        Args:
-            audio_chunk: 音訊片段字典（包含 audio、timestamp、duration）
-        """
         self.input_queue.put(audio_chunk)
 
     def get_result(self, timeout: Optional[float] = None) -> Optional[Dict]:
-        """
-        取得處理結果
-
-        Args:
-            timeout: 超時時間（秒），None 表示不等待
-
-        Returns:
-            處理結果字典，如果佇列為空返回 None
-        """
         try:
             return self.output_queue.get(timeout=timeout)
         except queue.Empty:
             return None
 
     def get_queue_size(self) -> int:
-        """
-        取得待處理佇列大小
-
-        Returns:
-            待處理的音訊片段數量
-        """
         return self.input_queue.qsize()

@@ -20,6 +20,7 @@ from templates import (
     LANGUAGE_OPTIONS, LANGUAGE_FILE_LABELS, LANGUAGE_TONE_CLASSES,
     MODE_ORDER, LEGACY_MODE_ALIASES,
     TOP_PANEL_HEIGHT, MAX_VISIBLE_FEED_ITEMS, MAX_VISIBLE_TRANSCRIPT_CARDS,
+    STT_PROVIDERS, TRANSLATION_PROVIDERS, PROVIDER_KEY_GROUPS,
     normalize_mode, get_language_label, get_file_language_label, get_language_tone,
     get_mode_options, get_mode_summary, get_default_mode,
     get_flow_language_options, get_default_flow_language,
@@ -115,6 +116,10 @@ def init_session_state():
         st.session_state.is_paused = False
     if 'api_key' not in st.session_state:
         st.session_state.api_key = config_manager.get_api_key() or ""
+    if 'stt_provider' not in st.session_state:
+        st.session_state.stt_provider = config_manager.get_setting('stt_provider', 'openai_whisper')
+    if 'translation_provider' not in st.session_state:
+        st.session_state.translation_provider = config_manager.get_setting('translation_provider', 'openai_gpt')
     if 'debug_logs' not in st.session_state:
         st.session_state.debug_logs = []
     if 'error_messages' not in st.session_state:
@@ -589,9 +594,19 @@ def _force_sync_widget_keys():
 
 def start_recording():
     """開始錄音"""
-    if not st.session_state.api_key:
-        st.error("請先輸入 OpenAI API Key")
-        add_error_message("缺少 API Key")
+    # 檢查所有需要的 API key 是否已設定
+    stt_prov = st.session_state.get('stt_provider', 'openai_whisper')
+    trans_prov = st.session_state.get('translation_provider', 'openai_gpt')
+    stt_grp = PROVIDER_KEY_GROUPS.get(stt_prov, 'openai')
+    trans_grp = PROVIDER_KEY_GROUPS.get(trans_prov, 'openai')
+    missing = []
+    if not (config_manager.get_provider_api_key(stt_grp) or st.session_state.api_key):
+        missing.append(f"{stt_grp.upper()} ({STT_PROVIDERS[stt_prov]['name']})")
+    if not (config_manager.get_provider_api_key(trans_grp) or st.session_state.api_key):
+        missing.append(f"{trans_grp.upper()} ({TRANSLATION_PROVIDERS[trans_prov]['name']})")
+    if missing:
+        st.error(f"請先輸入 API Key：{', '.join(missing)}")
+        add_error_message(f"缺少 API Key：{', '.join(missing)}")
         return
 
     try:
@@ -629,10 +644,22 @@ def start_recording():
         vad_label = "VAD smart" if st.session_state.recorder.vad_enabled else "fixed"
         add_debug_log(f"⚙️ 音訊片段長度：{st.session_state.chunk_duration}秒，靜音閾值：{st.session_state.silence_threshold}，切割模式：{vad_label}")
 
-        # 初始化 Transcriber（每次都重新初始化以確保使用最新的 API Key）
-        add_debug_log("🤖 正在初始化 Whisper API...")
-        st.session_state.transcriber = Transcriber(st.session_state.api_key)
-        add_debug_log(f"✅ Whisper API 已初始化（API Key: {st.session_state.api_key[:10]}...）")
+        # 初始化 Transcriber（依選擇的 Provider 建立對應的 client）
+        stt_prov = st.session_state.get('stt_provider', 'openai_whisper')
+        trans_prov = st.session_state.get('translation_provider', 'openai_gpt')
+        stt_group = PROVIDER_KEY_GROUPS.get(stt_prov, 'openai')
+        trans_group = PROVIDER_KEY_GROUPS.get(trans_prov, 'openai')
+        stt_key = config_manager.get_provider_api_key(stt_group) or st.session_state.api_key
+        trans_key = config_manager.get_provider_api_key(trans_group) or st.session_state.api_key
+
+        add_debug_log(f"🤖 正在初始化 STT={STT_PROVIDERS[stt_prov]['name']}, 翻譯={TRANSLATION_PROVIDERS[trans_prov]['name']}...")
+        st.session_state.transcriber = Transcriber(
+            stt_api_key=stt_key,
+            stt_provider=stt_prov,
+            translation_api_key=trans_key,
+            translation_provider=trans_prov,
+        )
+        add_debug_log(f"✅ API 已初始化（STT: {stt_key[:8]}..., Trans: {trans_key[:8]}...）")
 
         st.session_state.transcriber.set_mode(st.session_state.mode)
         st.session_state.transcriber.set_language(st.session_state.language)
@@ -899,32 +926,92 @@ def main():
 
         st.divider()
 
-        # API Key 輸入
-        st.markdown("<div class='section-label'>OpenAI API Key</div>", unsafe_allow_html=True)
-        api_key_input = st.text_input(
-            "API Key",
-            value=st.session_state.api_key,
-            type="password",
-            help="請到 https://platform.openai.com/api-keys 取得",
-            disabled=st.session_state.is_recording
+        # ================================================================
+        # API Provider 選擇與 API Key 管理
+        # ================================================================
+        st.markdown("<div class='section-label'>API Providers</div>", unsafe_allow_html=True)
+
+        # --- STT Provider ---
+        stt_options = list(STT_PROVIDERS.keys())
+        current_stt = st.session_state.get('stt_provider', 'openai_whisper')
+        stt_index = stt_options.index(current_stt) if current_stt in stt_options else 0
+        selected_stt = st.selectbox(
+            "Speech-to-Text",
+            stt_options,
+            index=stt_index,
+            format_func=lambda x: STT_PROVIDERS[x]["name"],
+            disabled=st.session_state.is_recording,
+            help="語音辨識引擎。Groq 速度快 10-50 倍但免費額度有限。",
+            key='stt_provider_widget'
         )
+        if not st.session_state.is_recording and selected_stt != st.session_state.stt_provider:
+            st.session_state.stt_provider = selected_stt
+            _persist_setting_if_changed('stt_provider', selected_stt)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("💾 儲存", disabled=st.session_state.is_recording):
-                if api_key_input:
-                    config_manager.save_api_key(api_key_input)
-                    st.session_state.api_key = api_key_input
-                    st.success("API Key 已儲存")
+        # --- Translation Provider ---
+        trans_options = list(TRANSLATION_PROVIDERS.keys())
+        current_trans = st.session_state.get('translation_provider', 'openai_gpt')
+        trans_index = trans_options.index(current_trans) if current_trans in trans_options else 0
+        selected_trans = st.selectbox(
+            "Translation",
+            trans_options,
+            index=trans_index,
+            format_func=lambda x: TRANSLATION_PROVIDERS[x]["name"],
+            disabled=st.session_state.is_recording,
+            help="翻譯引擎。DeepL 日中品質最佳；Gemini Flash 免費額度大。",
+            key='translation_provider_widget'
+        )
+        if not st.session_state.is_recording and selected_trans != st.session_state.translation_provider:
+            st.session_state.translation_provider = selected_trans
+            _persist_setting_if_changed('translation_provider', selected_trans)
+
+        # --- 動態 API Key 區域 ---
+        # 計算需要哪些 key group
+        stt_group = PROVIDER_KEY_GROUPS.get(selected_stt, selected_stt)
+        trans_group = PROVIDER_KEY_GROUPS.get(selected_trans, selected_trans)
+        needed_groups = []
+        seen = set()
+        for grp in [stt_group, trans_group]:
+            if grp not in seen:
+                needed_groups.append(grp)
+                seen.add(grp)
+
+        st.markdown("<div class='section-label'>API Keys</div>", unsafe_allow_html=True)
+
+        # 針對每個需要的 key group 顯示一個輸入欄位
+        for grp in needed_groups:
+            # 找到對應的 provider 名稱與 help URL
+            # 從 STT 或 Translation providers 中找到第一個屬於此 group 的
+            help_url = ""
+            group_label = grp.capitalize()
+            for pid, pcfg in {**STT_PROVIDERS, **TRANSLATION_PROVIDERS}.items():
+                if PROVIDER_KEY_GROUPS.get(pid) == grp:
+                    help_url = pcfg.get("key_help", "")
+                    # 用 provider 的 group 名稱作為 label
+                    group_label = grp.upper()
+                    break
+
+            saved_key = config_manager.get_provider_api_key(grp) or ""
+            key_input = st.text_input(
+                f"{group_label} API Key",
+                value=saved_key,
+                type="password",
+                help=f"取得 Key：{help_url}" if help_url else None,
+                disabled=st.session_state.is_recording,
+                key=f'api_key_{grp}'
+            )
+
+            # 自動儲存（值有變更時）
+            if not st.session_state.is_recording and key_input != saved_key:
+                if key_input:
+                    config_manager.save_provider_api_key(grp, key_input)
+                    # 向後相容：如果是 openai group，同步更新 api_key
+                    if grp == "openai":
+                        st.session_state.api_key = key_input
                 else:
-                    st.error("請輸入 API Key")
-
-        with col2:
-            if st.button("🗑️ 清除", disabled=st.session_state.is_recording):
-                config_manager.clear_api_key()
-                st.session_state.api_key = ""
-                st.success("API Key 已清除")
-                st.rerun()
+                    config_manager.clear_provider_api_key(grp)
+                    if grp == "openai":
+                        st.session_state.api_key = ""
 
         st.divider()
 

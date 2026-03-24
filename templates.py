@@ -44,6 +44,87 @@ LANGUAGE_TONE_CLASSES = {
 
 MODE_ORDER = ("transcribe", "translate_en", "translate_target")
 
+
+# ============================================================================
+# API Provider 定義
+# ============================================================================
+
+STT_PROVIDERS = {
+    "openai_whisper": {
+        "name": "OpenAI Whisper",
+        "base_url": None,
+        "model": "whisper-1",
+        "key_help": "https://platform.openai.com/api-keys",
+    },
+    "groq_whisper": {
+        "name": "Groq Whisper (Fast)",
+        "base_url": "https://api.groq.com/openai/v1",
+        "model": "whisper-large-v3-turbo",
+        "key_help": "https://console.groq.com/keys",
+    },
+}
+
+TRANSLATION_PROVIDERS = {
+    "openai_gpt": {
+        "name": "GPT-4o-mini (OpenAI)",
+        "type": "openai_compatible",
+        "base_url": None,
+        "model": "gpt-4o-mini",
+        "key_help": "https://platform.openai.com/api-keys",
+    },
+    "deepl": {
+        "name": "DeepL",
+        "type": "deepl",
+        "base_url": "https://api-free.deepl.com/v2/translate",
+        "model": None,
+        "key_help": "https://www.deepl.com/pro-api",
+    },
+    "gemini_flash": {
+        "name": "Gemini Flash (Google)",
+        "type": "openai_compatible",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "model": "gemini-2.0-flash-lite",
+        "key_help": "https://aistudio.google.com/apikey",
+    },
+    "claude_haiku": {
+        "name": "Claude Haiku (Anthropic)",
+        "type": "anthropic",
+        "base_url": "https://api.anthropic.com/v1/messages",
+        "model": "claude-haiku-4-5-20250414",
+        "key_help": "https://console.anthropic.com/settings/keys",
+    },
+    "deepseek": {
+        "name": "DeepSeek-V3",
+        "type": "openai_compatible",
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-chat",
+        "key_help": "https://platform.deepseek.com/api_keys",
+    },
+}
+
+# Provider 之間共用 API key 的群組對應
+# 同一 group 的 provider 可以共用同一把 key
+PROVIDER_KEY_GROUPS = {
+    "openai_whisper": "openai",
+    "openai_gpt": "openai",
+    "groq_whisper": "groq",
+    "deepl": "deepl",
+    "gemini_flash": "google",
+    "claude_haiku": "anthropic",
+    "deepseek": "deepseek",
+}
+
+# DeepL 語言代碼對應（DeepL 使用不同的語言代碼）
+DEEPL_LANGUAGE_MAP = {
+    "ja": "JA",
+    "en": "EN",
+    "zh": "ZH-HANT",   # 繁體中文
+    "ko": "KO",
+    "es": "ES",
+    "fr": "FR",
+    "de": "DE",
+}
+
 LEGACY_MODE_ALIASES = {
     "translate": "translate_en",
     "translate_zh": "translate_target"
