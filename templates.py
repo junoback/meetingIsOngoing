@@ -62,6 +62,12 @@ STT_PROVIDERS = {
         "model": "whisper-large-v3-turbo",
         "key_help": "https://console.groq.com/keys",
     },
+    "xai_whisper": {
+        "name": "xAI Grok Whisper",
+        "base_url": "https://api.x.ai/v1",
+        "model": "whisper-large-v3-turbo",
+        "key_help": "https://console.x.ai",
+    },
 }
 
 TRANSLATION_PROVIDERS = {
@@ -100,6 +106,13 @@ TRANSLATION_PROVIDERS = {
         "model": "deepseek-chat",
         "key_help": "https://platform.deepseek.com/api_keys",
     },
+    "xai_grok": {
+        "name": "Grok (xAI)",
+        "type": "openai_compatible",
+        "base_url": "https://api.x.ai/v1",
+        "model": "grok-3-mini-fast",
+        "key_help": "https://console.x.ai",
+    },
 }
 
 # Provider 之間共用 API key 的群組對應
@@ -112,6 +125,8 @@ PROVIDER_KEY_GROUPS = {
     "gemini_flash": "google",
     "claude_haiku": "anthropic",
     "deepseek": "deepseek",
+    "xai_whisper": "xai",
+    "xai_grok": "xai",
 }
 
 # DeepL 語言代碼對應（DeepL 使用不同的語言代碼）
