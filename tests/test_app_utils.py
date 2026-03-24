@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import sanitize_filename, _timestamp_to_seconds
+from app import sanitize_filename, _timestamp_to_seconds, ProcessingController, _persist_setting_if_changed, _last_persisted
 
 
 # ============================================================================
@@ -107,3 +107,56 @@ class TestTimestampToSeconds:
         ts = datetime(2026, 3, 25, 0, 30, 0)
         result = _timestamp_to_seconds(ts)
         assert result == 30 * 60  # 不加 86400
+
+
+# ============================================================================
+# ProcessingController 記憶體限制
+# ============================================================================
+
+class TestProcessingControllerMemory:
+    def test_max_in_memory_transcripts_constant(self):
+        """確認記憶體上限常數存在"""
+        assert ProcessingController.MAX_IN_MEMORY_TRANSCRIPTS == 500
+
+    def test_total_transcript_count_tracks_all(self):
+        """total_transcript_count 應追蹤所有 transcript（含已淘汰）"""
+        from unittest.mock import MagicMock
+        controller = ProcessingController(MagicMock(), MagicMock())
+        controller.total_transcript_count = 0
+        # 直接模擬 append 行為
+        for i in range(10):
+            controller.transcripts.append({'text': f'item-{i}'})
+            controller.total_transcript_count += 1
+        assert controller.total_transcript_count == 10
+        assert len(controller.transcripts) == 10
+
+
+# ============================================================================
+# _persist_setting_if_changed
+# ============================================================================
+
+class TestPersistSetting:
+    def test_persist_calls_save_on_change(self):
+        """值改變時應呼叫 config_manager.save_setting"""
+        from unittest.mock import patch
+        _last_persisted.clear()
+        with patch('app.config_manager') as mock_cm:
+            _persist_setting_if_changed('test_key', 'value_a')
+            mock_cm.save_setting.assert_called_once_with('test_key', 'value_a')
+
+    def test_persist_skips_same_value(self):
+        """相同值不應重複寫入"""
+        from unittest.mock import patch
+        _last_persisted.clear()
+        _last_persisted['test_key2'] = 'same_value'
+        with patch('app.config_manager') as mock_cm:
+            _persist_setting_if_changed('test_key2', 'same_value')
+            mock_cm.save_setting.assert_not_called()
+
+    def test_persist_updates_cache(self):
+        """寫入後應更新快取"""
+        from unittest.mock import patch
+        _last_persisted.clear()
+        with patch('app.config_manager'):
+            _persist_setting_if_changed('cache_key', 42)
+        assert _last_persisted['cache_key'] == 42

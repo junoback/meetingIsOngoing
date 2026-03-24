@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-03-24 — Session: Sprint 6 — Polish & Bug Fixes
+
+### What was done
+- **S6-01**: Fixed terminology zh-only guard — P2-03 was marked done but `target_language == "zh"` guard remained in `start_recording()`, meaning terminology was only loaded for Chinese target. Now loads for all languages.
+- **S6-02**: Replaced 3 remaining `print()` calls in app.py with `logger.info()`/`logger.error()`. Zero `print()` in production code now.
+- **S6-03**: Added settings auto-persist — `_persist_setting_if_changed()` with dedup cache saves 8 sidebar settings to config.json on change (language, target_language, mode, selected_device, chunk_duration, silence_threshold, vad_enabled, show_bilingual).
+- **S6-04**: Added transcript memory cap — `ProcessingController.MAX_IN_MEMORY_TRANSCRIPTS = 500`. Evicts oldest entries from memory during long sessions; live transcript file still has all data.
+- **S6-05**: Fixed history download bug — `preview` could be undefined if file read raised exception; now initialized to `None` with conditional download button.
+- **Tests**: 147 total (+5 new for memory cap + auto-persist).
+
+### Issues encountered
+- P2-03 (terminology for all languages) was previously marked complete in BACKLOG but the actual guard in app.py was never removed — classic "doc says done but code says otherwise" gap.
+
+### Decisions
+- Memory cap set to 500 (covers ~2.5 hours at 10s chunks). Live transcript file is the complete record.
+- Auto-persist uses module-level `_last_persisted` dict to avoid redundant disk writes on every Streamlit rerun.
+
+---
+
 ## 2026-03-24 — Session: Sprint 3+ (Polish + All Remaining Features)
 
 ### What was done

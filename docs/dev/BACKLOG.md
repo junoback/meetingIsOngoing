@@ -150,6 +150,35 @@
 
 ---
 
+## Sprint 6 — Polish & Bug Fixes
+
+### S6-01: Fix terminology zh-only guard
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: P2-03 marked done but `target_language == "zh"` guard remained in app.py `start_recording()`.
+- **Fix**: Removed guard; terminology dictionary now loaded unconditionally for all target languages.
+
+### S6-02: Replace remaining print() with logger
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: 3 print() calls remained in app.py (add_debug_log, add_error_message, ProcessingController.start).
+- **Fix**: Replaced with logger.info() / logger.error().
+
+### S6-03: Settings auto-persist on change
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: Sidebar widget changes (language, mode, device, etc.) not saved to config.json between sessions.
+- **Fix**: `_persist_setting_if_changed()` with `_last_persisted` cache. 8 settings auto-saved.
+
+### S6-04: Transcript memory cap for long sessions
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: `controller.transcripts` list grows unbounded; 4+ hour sessions risk memory exhaustion.
+- **Fix**: MAX_IN_MEMORY_TRANSCRIPTS=500. Older entries evicted from memory; all data preserved in live transcript file.
+
+### S6-05: Fix history download bug
+- **Status**: `[x]` Done (2026-03-24)
+- **Why**: `preview` variable used in download_button could be undefined if file read raised an exception.
+- **Fix**: Initialize `preview=None`, only render download button if read succeeded.
+
+---
+
 ## Completed
 
 ### BUG: Settings reset during long recording sessions (2026-03-23)

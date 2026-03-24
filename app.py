@@ -43,6 +43,25 @@ if not logger.handlers:
     logger.setLevel(logging.INFO)
 
 
+# ============================================================================
+# 設定自動儲存（追蹤變更，避免每次 rerun 都寫入磁碟）
+# ============================================================================
+_last_persisted: dict = {}
+
+def _persist_setting_if_changed(key: str, value):
+    """只在值真正改變時才寫入 config，減少磁碟 I/O。
+
+    用 config_manager 的實際儲存值做基準比對（不是記憶體快取），
+    避免 widget 暫態重置被錯誤寫入。
+    """
+    # 首次呼叫時從 config 載入基準值
+    if key not in _last_persisted:
+        _last_persisted[key] = config_manager.get_setting(key)
+    if _last_persisted.get(key) != value:
+        config_manager.save_setting(key, value)
+        _last_persisted[key] = value
+
+
 def sanitize_filename(name: str) -> str:
     """清理檔案名稱中的特殊字元（共用工具函式）"""
     if not name:
@@ -130,7 +149,7 @@ def add_debug_log(message: str):
     # 只保留最近 50 條日誌
     if len(st.session_state.debug_logs) > 50:
         st.session_state.debug_logs = st.session_state.debug_logs[-50:]
-    print(log_entry)  # 同時輸出到 Terminal
+    logger.info(log_entry)
 
 
 def add_error_message(message: str):
@@ -140,7 +159,7 @@ def add_error_message(message: str):
     st.session_state.error_messages.append(error_entry)
     if len(st.session_state.error_messages) > 10:
         st.session_state.error_messages = st.session_state.error_messages[-10:]
-    print(f"ERROR: {error_entry}")  # 輸出到 Terminal
+    logger.error(error_entry)
 
 
 def get_status_metadata():
@@ -421,12 +440,16 @@ def save_transcript_to_vtt(
 class ProcessingController:
     """處理控制器（避免在子執行緒中訪問 st.session_state）"""
 
+    # 記憶體中保留的最大 transcript 數量（更早的仍保存在 live transcript 檔案中）
+    MAX_IN_MEMORY_TRANSCRIPTS = 500
+
     def __init__(self, recorder, worker):
         self.recorder = recorder
         self.worker = worker
         self.stop_flag = False
         self.is_paused = False
         self.transcripts = []
+        self.total_transcript_count = 0  # 總筆數（含已淘汰的）
         self.error_messages = []
         self.thread = None
         self.live_transcript_path = None  # 即時逐字稿檔案路徑
@@ -440,7 +463,7 @@ class ProcessingController:
         self.stop_flag = False
         self.thread = threading.Thread(target=self._processing_loop, daemon=True)
         self.thread.start()
-        print("✅ ProcessingController 執行緒已啟動")
+        logger.info("✅ ProcessingController 執行緒已啟動")
 
     def stop(self):
         """停止處理執行緒"""
@@ -476,6 +499,10 @@ class ProcessingController:
                     if result:
                         if result.get('success', True):
                             self.transcripts.append(result)
+                            self.total_transcript_count += 1
+                            # 記憶體限制：超過上限時淘汰最舊的（檔案中仍完整保留）
+                            if len(self.transcripts) > self.MAX_IN_MEMORY_TRANSCRIPTS:
+                                self.transcripts = self.transcripts[-self.MAX_IN_MEMORY_TRANSCRIPTS:]
                             logger.info("✅ 辨識完成：%s", result['text'][:50])
 
                             if self.live_transcript_path:
@@ -502,6 +529,43 @@ class ProcessingController:
                 time.sleep(backoff)
 
         logger.info("⏹️ 處理迴圈已停止")
+
+
+def _force_sync_widget_keys():
+    """強制同步所有 widget key 到權威 session_state 值。
+
+    【關鍵修復】st.rerun(scope="app") 從 fragment 內觸發時，
+    Streamlit 可能在 full-page rerun 時把 sidebar widget key 重置為 index=0。
+    在 rerun 前呼叫此函式，確保 widget key 與權威值一致，
+    這樣即使 Streamlit 重建 widget，也會從 session_state 讀到正確值。
+    """
+    language_options = list(LANGUAGE_OPTIONS.keys())
+
+    lang = st.session_state.get('language', 'ja')
+    if lang in language_options:
+        st.session_state.language_widget = lang
+
+    target = st.session_state.get('target_language', 'zh')
+    if target in language_options:
+        st.session_state.target_language_widget = target
+
+    mode_opts = get_mode_options(
+        st.session_state.get('language', 'ja'),
+        st.session_state.get('target_language', 'zh')
+    )
+    mode_val = st.session_state.get('mode', 'translate_target')
+    if mode_val in mode_opts:
+        st.session_state.mode_widget = mode_val
+
+    # Reading Flow Language
+    flow_opts = get_flow_language_options(
+        normalize_mode(mode_val),
+        st.session_state.get('language', 'ja'),
+        st.session_state.get('target_language', 'zh')
+    )
+    flow_val = st.session_state.get('reading_flow_language')
+    if flow_val in flow_opts:
+        st.session_state.reading_flow_language_widget = flow_val
 
 
 def start_recording():
@@ -559,7 +623,7 @@ def start_recording():
         )
 
         # 設定會議上下文（提高翻譯準確性）
-        terminology = config_manager.get_terminology() if st.session_state.target_language == "zh" else {}
+        terminology = config_manager.get_terminology()
         st.session_state.transcriber.set_meeting_context(
             meeting_topic=st.session_state.meeting_topic,
             terminology=terminology
@@ -806,6 +870,13 @@ def main():
             key='vad_enabled'
         )
 
+        # 自動儲存音訊設定（僅在非錄音狀態、且值真正改變時寫入）
+        if not st.session_state.is_recording:
+            _persist_setting_if_changed('selected_device', selected_device)
+            _persist_setting_if_changed('chunk_duration', chunk_duration)
+            _persist_setting_if_changed('silence_threshold', silence_threshold)
+            _persist_setting_if_changed('vad_enabled', vad_enabled)
+
         st.divider()
 
         # API Key 輸入
@@ -837,20 +908,27 @@ def main():
 
         st.divider()
 
-        # 語言選擇
+        # ================================================================
+        # 語言 / 模式選擇
+        #
+        # 【重要】Streamlit 的 st.rerun(scope="app") 從 fragment 內觸發時，
+        # sidebar 的 widget key 可能遺失，selectbox/radio 會退回 index=0。
+        #
+        # 防護策略（belt-and-suspenders）：
+        #   1. 權威值 = st.session_state.language / .target_language / .mode
+        #   2. 每次 render 從權威值計算 index= 作為 fallback
+        #   3. key= 仍保留（正常情況下 Streamlit 會優先使用 key 值）
+        #   4. widget 返回值寫回權威值
+        # ================================================================
         language_options = list(LANGUAGE_OPTIONS.keys())
-        current_language = st.session_state.get('language', 'ja')
-        current_target_language = st.session_state.get('target_language', 'zh')
-        current_language_index = language_options.index(current_language) if current_language in language_options else 0
-        current_target_index = language_options.index(current_target_language) if current_target_language in language_options else 0
 
-        # 音源語言（錄音中鎖定）
-        # 重要：兩個 branch 都使用相同的 key，確保 Streamlit widget tree 一致
-        if st.session_state.get('language_widget') not in language_options:
-            st.session_state.language_widget = current_language
+        # --- 音源語言（錄音中鎖定）---
+        current_language = st.session_state.get('language', 'ja')
+        language_index = language_options.index(current_language) if current_language in language_options else 0
         selected_language = st.selectbox(
             "Audio Language",
             language_options,
+            index=language_index,
             format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
             disabled=st.session_state.is_recording,
             help="🔒 Locked while recording." if st.session_state.is_recording
@@ -858,27 +936,31 @@ def main():
             key='language_widget'
         )
         if not st.session_state.is_recording:
+            if selected_language != st.session_state.language:
+                _persist_setting_if_changed('language', selected_language)
             st.session_state.language = selected_language
 
-        # 目標語言（錄音中也可切換）
-        if st.session_state.get('target_language_widget') not in language_options:
-            st.session_state.target_language_widget = current_target_language
+        # --- 目標語言（錄音中也可切換）---
+        current_target_language = st.session_state.get('target_language', 'zh')
+        target_index = language_options.index(current_target_language) if current_target_language in language_options else 0
         selected_target_language = st.selectbox(
             "Native Language",
             language_options,
+            index=target_index,
             format_func=lambda x: LANGUAGE_OPTIONS.get(x, x),
             help="✏️ Can be changed during recording." if st.session_state.is_recording
                  else "Choose the language you want as your personal translation output.",
             key='target_language_widget'
         )
         if selected_target_language != st.session_state.target_language:
+            # 使用者主動切換 → 更新權威值並儲存
+            _persist_setting_if_changed('target_language', selected_target_language)
             st.session_state.target_language = selected_target_language
             if st.session_state.is_recording and st.session_state.transcriber:
                 st.session_state.transcriber.set_target_language(selected_target_language)
                 add_debug_log(f"🌐 錄音中切換目標語言：{selected_target_language}")
-        elif not st.session_state.is_recording:
-            st.session_state.target_language = selected_target_language
 
+        # --- 處理模式（錄音中也可切換）---
         mode_options = get_mode_options(st.session_state.language, st.session_state.target_language)
         mode_keys = list(mode_options.keys())
         default_mode = get_default_mode(st.session_state.language, st.session_state.target_language)
@@ -886,20 +968,21 @@ def main():
         if current_mode not in mode_keys:
             st.session_state.mode = default_mode if default_mode in mode_keys else mode_keys[0]
             current_mode = st.session_state.mode
+        mode_index = mode_keys.index(current_mode) if current_mode in mode_keys else 0
 
-        # 處理模式（錄音中也可切換）
         st.markdown("<div class='section-label'>Translation Mode</div>", unsafe_allow_html=True)
 
-        if st.session_state.get('mode_widget') not in mode_keys:
-            st.session_state.mode_widget = current_mode
         mode = st.radio(
             "選擇模式",
             mode_keys,
+            index=mode_index,
             format_func=lambda x: mode_options[x],
             key='mode_widget',
             help="✏️ Can be changed during recording." if st.session_state.is_recording else None
         )
         if mode != st.session_state.mode:
+            # 使用者主動切換 → 更新權威值並儲存
+            _persist_setting_if_changed('mode', mode)
             st.session_state.mode = mode
             if st.session_state.is_recording and st.session_state.transcriber:
                 st.session_state.transcriber.set_mode(mode)
@@ -916,6 +999,7 @@ def main():
             help="Display source text and translated text side by side. Can be toggled during recording.",
             key='show_bilingual'
         )
+        _persist_setting_if_changed('show_bilingual', show_bilingual)
 
         st.divider()
 
@@ -1091,11 +1175,11 @@ def main():
         flow_selector_col, flow_selector_spacer = st.columns([2.3, 3.7])
         with flow_selector_col:
             st.markdown("<div class='section-label'>Reading Flow Language</div>", unsafe_allow_html=True)
-            if st.session_state.get('reading_flow_language_widget') not in flow_language_options:
-                st.session_state.reading_flow_language_widget = selected_flow_language
+            flow_index = flow_language_options.index(selected_flow_language) if selected_flow_language in flow_language_options else 0
             selected_flow_language = st.selectbox(
                 "Reading Flow Language",
                 flow_language_options,
+                index=flow_index,
                 format_func=get_language_label,
                 key='reading_flow_language_widget',
                 label_visibility="collapsed"
@@ -1165,16 +1249,19 @@ def main():
                 type="primary"
             ):
                 start_recording()
+                _force_sync_widget_keys()
                 st.rerun(scope="app")
 
         with col2:
             if st.session_state.is_recording and not st.session_state.is_paused:
                 if st.button("⏸ Pause", use_container_width=True):
                     pause_recording()
+                    _force_sync_widget_keys()
                     st.rerun(scope="app")
             elif st.session_state.is_recording and st.session_state.is_paused:
                 if st.button("▶ Resume", use_container_width=True):
                     resume_recording()
+                    _force_sync_widget_keys()
                     st.rerun(scope="app")
 
         with col3:
@@ -1185,6 +1272,7 @@ def main():
                 type="primary" if st.session_state.is_recording else "secondary"
             ):
                 stop_recording()
+                _force_sync_widget_keys()
                 st.rerun(scope="app")
 
         st.markdown("<div class='control-caption'>Session Snapshot</div>", unsafe_allow_html=True)
@@ -1403,6 +1491,7 @@ def main():
                     label = f"📄 {hist_file.name}  ({file_size_kb:.1f} KB · {mod_time})"
 
                     with st.expander(label, expanded=False):
+                        preview = None
                         try:
                             preview = hist_file.read_text(encoding='utf-8')
                             # 只顯示前 3000 字元作為預覽
@@ -1413,13 +1502,14 @@ def main():
                         except Exception as e:
                             st.error(f"Cannot read file: {e}")
 
-                        st.download_button(
-                            label="Download",
-                            data=preview,  # 已經讀取過，直接複用
-                            file_name=hist_file.name,
-                            mime="text/plain",
-                            key=f"hist_dl_{hist_file.name}"
-                        )
+                        if preview is not None:
+                            st.download_button(
+                                label="Download",
+                                data=preview,
+                                file_name=hist_file.name,
+                                mime="text/plain",
+                                key=f"hist_dl_{hist_file.name}"
+                            )
 
     # 鍵盤快捷鍵
     render_keyboard_shortcuts()
