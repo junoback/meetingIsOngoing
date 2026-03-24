@@ -534,3 +534,56 @@ def render_live_feed_panel(
     </html>
     """
     components.html(panel_html, height=TOP_PANEL_HEIGHT, scrolling=False)
+
+
+def render_keyboard_shortcuts():
+    """
+    注入鍵盤快捷鍵 JS（透過 Streamlit 的隱藏 iframe 注入到頁面）
+
+    快捷鍵：
+      - Ctrl+Shift+R (or Cmd+Shift+R): Start Recording
+      - Ctrl+Shift+P (or Cmd+Shift+P): Pause / Resume
+      - Ctrl+Shift+S (or Cmd+Shift+S): Stop Session
+    """
+    shortcut_js = """
+    <script>
+    (function() {
+        // 在 parent（Streamlit 主頁面）上綁定鍵盤事件
+        const doc = window.parent.document;
+
+        function clickButtonByText(text) {
+            const buttons = doc.querySelectorAll('button[kind="primary"], button[kind="secondary"], button');
+            for (const btn of buttons) {
+                if (btn.textContent.trim().includes(text) && !btn.disabled) {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // 避免重複綁定
+        if (doc._meetingShortcutsBound) return;
+        doc._meetingShortcutsBound = true;
+
+        doc.addEventListener('keydown', function(e) {
+            const mod = e.ctrlKey || e.metaKey;
+            if (!mod || !e.shiftKey) return;
+
+            const key = e.key.toLowerCase();
+
+            if (key === 'r') {
+                e.preventDefault();
+                clickButtonByText('Start Recording');
+            } else if (key === 'p') {
+                e.preventDefault();
+                clickButtonByText('Pause') || clickButtonByText('Resume');
+            } else if (key === 's') {
+                e.preventDefault();
+                clickButtonByText('Stop Session');
+            }
+        });
+    })();
+    </script>
+    """
+    components.html(shortcut_js, height=0)

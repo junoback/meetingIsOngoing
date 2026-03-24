@@ -79,7 +79,7 @@
 ## Priority 3 — Polish & Nice-to-have
 
 ### P3-01: Streaming WAV download
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: `f.read()` loads entire WAV into memory; problematic for 2+ hour meetings.
 - **Plan**: Use `st.download_button` with file path or chunked reading.
 - **Effort**: Small
@@ -93,7 +93,7 @@
 - **Risk**: Medium (thread safety for mode changes)
 
 ### P3-03: Keyboard shortcuts
-- **Status**: `[ ]`
+- **Status**: `[x]` Done (2026-03-24)
 - **Why**: Start/stop/pause require mouse clicks.
 - **Plan**: Add JS-based keyboard shortcuts (e.g., Space=pause, Escape=stop).
 - **Effort**: Small

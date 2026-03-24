@@ -27,6 +27,7 @@ from templates import (
     get_text_for_language, get_feed_items,
     build_language_panel, render_metric_card, render_sidebar_summary_card,
     render_transcript_card, render_live_feed_panel,
+    render_keyboard_shortcuts,
 )
 
 
@@ -1318,11 +1319,10 @@ def main():
                 if recording_file and Path(recording_file).exists():
                     file_size_mb = Path(recording_file).stat().st_size / 1024 / 1024
                     st.caption(f"File size: {file_size_mb:.2f} MB")
-                    with open(recording_file, 'rb') as f:
-                        audio_data = f.read()
+                    # 使用 file object 避免將整個 WAV 載入記憶體
                     st.download_button(
                         label="Download WAV",
-                        data=audio_data,
+                        data=open(recording_file, 'rb'),
                         file_name=Path(recording_file).name,
                         mime="audio/wav",
                         use_container_width=True
@@ -1331,6 +1331,9 @@ def main():
                     st.info("No audio file available")
             else:
                 st.info("No audio file available")
+
+    # 鍵盤快捷鍵
+    render_keyboard_shortcuts()
 
     # 自動重新整理（錄音中時）
     if st.session_state.is_recording:
