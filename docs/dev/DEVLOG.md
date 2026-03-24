@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-03-24 — Session: Sprint 3 (Polish + Remaining Features)
+
+### What was done
+- **P3-01**: Streaming WAV download — replaced `f.read()` with `open(file, 'rb')` for memory efficiency
+- **P3-03**: Keyboard shortcuts — Ctrl/Cmd+Shift+R/P/S for start/pause/stop via JS injection
+- **P2-04**: Session history & review — lists up to 20 past transcripts with expandable preview and download
+
+### Decisions
+- Keyboard shortcuts use Ctrl+Shift (or Cmd+Shift on Mac) prefix to avoid conflicts with browser shortcuts
+- Session history only shown when not recording to avoid UI clutter during active sessions
+- Sprint 3 wraps up all low-hanging fruit; remaining items (P3-02, P2-05, P1-03) are higher risk/effort
+
+---
+
 ## 2026-03-24 — Session: Two Sprints Complete (P1 + P2)
 
 ### What was done (Sprint 2 — Feature Enhancements)
