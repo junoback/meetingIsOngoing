@@ -1475,19 +1475,38 @@ def main():
             )
 
     # ========================================================================
-    # Live Viewer 入口（放在 fragment 外面，確保每次頁面渲染都會檢查）
+    # Live Viewer 入口（獨立 fragment，每 5 秒自動偵測其他裝置的錄音）
     # ========================================================================
-    if not st.session_state.is_recording:
-        _remote_marker = _read_active_session_marker()
-        if _remote_marker:
-            _viewer_name = _remote_marker.get('meeting_name', '錄音')
-            st.info(
-                f"📡 **另一台裝置正在錄音中** — {_viewer_name}",
-                icon="📡"
-            )
-            if st.button("📡 進入 Live Viewer 觀看即時翻譯", use_container_width=True, type="secondary"):
+    _viewer_poll = timedelta(seconds=5) if not st.session_state.is_recording else None
+
+    @st.fragment(run_every=_viewer_poll)
+    def _check_remote_session():
+        """自動偵測是否有其他裝置正在錄音，顯示 Live Viewer 入口"""
+        if st.session_state.is_recording:
+            return
+        marker = _read_active_session_marker()
+        if marker:
+            viewer_name = marker.get('meeting_name', '錄音')
+            viewer_topic = marker.get('meeting_topic', '')
+            started = marker.get('started_at', '')
+            info_text = f"📡 **另一台裝置正在錄音中** — {viewer_name}"
+            if viewer_topic:
+                info_text += f" · {viewer_topic}"
+            if started:
+                try:
+                    start_dt = datetime.fromisoformat(started)
+                    elapsed = datetime.now() - start_dt
+                    mins = int(elapsed.total_seconds() // 60)
+                    info_text += f" · 已進行 {mins} 分鐘"
+                except ValueError:
+                    pass
+            st.info(info_text, icon="📡")
+            if st.button("📡 進入 Live Viewer 觀看即時翻譯",
+                         use_container_width=True, type="secondary"):
                 st.session_state.viewer_mode = True
-                st.rerun()
+                st.rerun(scope="app")
+
+    _check_remote_session()
 
     # ========================================================================
     # ========================================================================
