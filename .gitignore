@@ -17,6 +17,7 @@ recordings/*.mp3
 transcripts/*.txt
 transcripts/*.srt
 transcripts/*.vtt
+transcripts/.active_session.json
 
 # macOS
 .DS_Store

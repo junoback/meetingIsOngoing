@@ -7,6 +7,7 @@
 import streamlit as st
 import logging
 import time
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 import threading
@@ -269,6 +270,94 @@ def append_to_live_transcript(file_path: str, item: dict):
                 f.write(f"{get_file_language_label(language_code)}：{text}\n")
 
         f.write("-" * 60 + "\n\n")
+
+
+# ============================================================================
+# Active Session Marker（跨 session 共享錄音狀態）
+# ============================================================================
+ACTIVE_SESSION_MARKER = Path("transcripts/.active_session.json")
+
+
+def _write_active_session_marker(transcript_path: str, meeting_name: str = "", meeting_topic: str = ""):
+    """錄音開始時寫入 marker，讓其他 session（手機/平板）進入 Viewer 模式"""
+    Path("transcripts").mkdir(exist_ok=True)
+    marker = {
+        "transcript_path": transcript_path,
+        "meeting_name": meeting_name,
+        "meeting_topic": meeting_topic,
+        "started_at": datetime.now().isoformat(),
+    }
+    ACTIVE_SESSION_MARKER.write_text(json.dumps(marker, ensure_ascii=False), encoding='utf-8')
+
+
+def _read_active_session_marker() -> dict | None:
+    """讀取 active session marker，不存在或超過 12 小時視為過期"""
+    if not ACTIVE_SESSION_MARKER.exists():
+        return None
+    try:
+        marker = json.loads(ACTIVE_SESSION_MARKER.read_text(encoding='utf-8'))
+        # 超過 12 小時視為殘留 marker，自動清除
+        started = datetime.fromisoformat(marker.get("started_at", ""))
+        if (datetime.now() - started).total_seconds() > 43200:
+            ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
+            return None
+        return marker
+    except (json.JSONDecodeError, OSError, ValueError):
+        return None
+
+
+def _clear_active_session_marker():
+    """錄音停止時清除 marker"""
+    if ACTIVE_SESSION_MARKER.exists():
+        ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
+
+
+def _parse_live_transcript_file(file_path: str) -> list[dict]:
+    """
+    解析 live transcript 檔案，回傳 feed items 列表。
+    格式：[HH:MM:SS] (延遲：X.XX秒)\\n語言：文字\\n---...
+    """
+    if not file_path or not Path(file_path).exists():
+        return []
+
+    try:
+        content = Path(file_path).read_text(encoding='utf-8')
+    except OSError:
+        return []
+
+    items = []
+    # 用分隔線切割每個 entry
+    entries = content.split("-" * 60)
+    for entry in entries:
+        entry = entry.strip()
+        if not entry or entry.startswith("="):
+            continue
+
+        lines = entry.split("\n")
+        timestamp = ""
+        texts = {}
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # 標題行跳過
+            if line.startswith("即時會議") or line.startswith("會議名稱") or line.startswith("會議主題") or line.startswith("開始時間") or line.startswith("對應錄音"):
+                continue
+            # 時間戳行：[HH:MM:SS]
+            if line.startswith("[") and "]" in line:
+                timestamp = line[1:line.index("]")]
+                continue
+            # 語言行：語言標籤：文字
+            if "：" in line:
+                label, _, text = line.partition("：")
+                if text:
+                    texts[label.strip()] = text.strip()
+
+        if timestamp and texts:
+            items.append({"timestamp": timestamp, "texts": texts})
+
+    return items
 
 
 def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_topic: str = "", language_selection: str = "all") -> str:
@@ -748,6 +837,13 @@ def start_recording():
         st.session_state.live_transcript_path = live_transcript_path
         add_debug_log(f"✅ 即時逐字稿檔案已創建：{live_transcript_path}")
 
+        # 寫入 active session marker（讓手機等遠端 session 進入 Viewer 模式）
+        _write_active_session_marker(
+            live_transcript_path,
+            meeting_name=st.session_state.meeting_name,
+            meeting_topic=st.session_state.meeting_topic
+        )
+
         st.session_state.controller.start()
         add_debug_log("✅ 處理控制器已啟動")
 
@@ -797,7 +893,118 @@ def stop_recording():
             st.session_state.worker.stop()
             st.session_state.worker = None
 
+        # 清除 active session marker
+        _clear_active_session_marker()
+
         st.success("錄音已停止")
+
+
+# ============================================================================
+# Viewer Mode（手機/遠端裝置唯讀檢視）
+# ============================================================================
+
+def _render_viewer_mode(marker: dict):
+    """
+    遠端 Viewer 模式：讀取電腦端正在寫入的 live transcript 檔案，
+    即時顯示翻譯結果。適用於手機、平板、Parallels VM 等。
+    """
+    transcript_path = marker.get("transcript_path", "")
+    meeting_name = marker.get("meeting_name", "")
+    meeting_topic = marker.get("meeting_topic", "")
+    started_at = marker.get("started_at", "")
+
+    st.markdown(get_main_css(), unsafe_allow_html=True)
+
+    # 標題
+    st.markdown(
+        "<div style='text-align:center; padding: 0.5rem 0;'>"
+        "<h2 style='margin:0;'>📡 Live Viewer</h2>"
+        "<p style='opacity:0.7; margin:0.25rem 0 0;'>即時翻譯檢視模式 — 由另一台裝置錄音中</p>"
+        "</div>",
+        unsafe_allow_html=True
+    )
+
+    # 會議資訊
+    info_parts = []
+    if meeting_name:
+        info_parts.append(f"**會議：** {meeting_name}")
+    if meeting_topic:
+        info_parts.append(f"**主題：** {meeting_topic}")
+    if started_at:
+        try:
+            start_dt = datetime.fromisoformat(started_at)
+            info_parts.append(f"**開始：** {start_dt.strftime('%H:%M:%S')}")
+        except ValueError:
+            pass
+    if info_parts:
+        st.markdown(" · ".join(info_parts))
+
+    st.divider()
+
+    # 語言選擇
+    language_labels = {"日語": "ja", "英文": "en", "中文": "zh"}
+    selected_label = st.selectbox(
+        "顯示語言 Display Language",
+        list(language_labels.keys()),
+        index=2,  # 預設中文
+        key='viewer_language'
+    )
+    viewer_lang_label = selected_label
+
+    # 自動刷新的 fragment
+    @st.fragment(run_every=timedelta(seconds=2))
+    def _viewer_feed():
+        # 檢查 marker 是否還存在（錄音是否已結束）
+        current_marker = _read_active_session_marker()
+        if not current_marker:
+            st.warning("錄音已結束。重新整理頁面回到主介面。")
+            return
+
+        items = _parse_live_transcript_file(transcript_path)
+        if not items:
+            st.info("等待翻譯結果中...")
+            return
+
+        # 篩選選定語言的文字
+        feed_lines = []
+        for item in items:
+            ts = item["timestamp"]
+            # 找到選定語言標籤對應的文字
+            text = item["texts"].get(viewer_lang_label, "")
+            if not text:
+                # fallback：用第一個可用的語言
+                text = next(iter(item["texts"].values()), "")
+            if text:
+                feed_lines.append(f"<span style='opacity:0.5; font-size:0.85em;'>[{ts}]</span> {html_module.escape(text)}")
+
+        total_count = len(feed_lines)
+
+        # 顯示 feed（手機友善的大字 scrollable 面板）
+        feed_html = "<br><br>".join(feed_lines) if feed_lines else "<em>尚無內容</em>"
+        st.components.v1.html(
+            f"""
+            <!DOCTYPE html>
+            <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+                * {{ margin:0; padding:0; box-sizing:border-box; }}
+                body {{ font-family: -apple-system, sans-serif; background: #111; color: #eee; }}
+                .feed {{ padding: 1rem; font-size: 1.15rem; line-height: 1.8; }}
+                .status {{ padding: 0.5rem 1rem; background: #1a3a1a; color: #6f6;
+                           font-size: 0.85rem; text-align: center; }}
+            </style></head><body>
+            <div class="status">🔴 LIVE — {total_count} 筆翻譯</div>
+            <div class="feed" id="f">{feed_html}</div>
+            <script>
+                var f=document.getElementById('f');
+                f.scrollTop=f.scrollHeight;
+            </script>
+            </body></html>
+            """,
+            height=600,
+            scrolling=True
+        )
+
+    _viewer_feed()
 
 
 # ============================================================================
@@ -807,6 +1014,15 @@ def stop_recording():
 def main():
     """主程式"""
     init_session_state()
+
+    # ========================================================================
+    # Viewer Mode 檢測：如果本 session 沒在錄音，但有其他 session 正在錄音
+    # ========================================================================
+    if not st.session_state.is_recording:
+        active_marker = _read_active_session_marker()
+        if active_marker:
+            _render_viewer_mode(active_marker)
+            return
 
     # ========================================================================
     # 側邊欄
