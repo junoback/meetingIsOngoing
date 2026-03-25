@@ -8,8 +8,12 @@ import streamlit as st
 import logging
 import time
 import json
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from functools import partial
 import threading
 import html as html_module
 
@@ -145,6 +149,8 @@ def init_session_state():
         st.session_state.reading_flow_language = st.session_state.target_language
     if 'viewer_mode' not in st.session_state:
         st.session_state.viewer_mode = False
+    if 'viewer_host' not in st.session_state:
+        st.session_state.viewer_host = config_manager.get_setting('viewer_host', '')
 
 
 
@@ -275,13 +281,14 @@ def append_to_live_transcript(file_path: str, item: dict):
 
 
 # ============================================================================
-# Active Session Marker（跨 session 共享錄音狀態）
+# Active Session Marker（跨 session / 跨機器共享錄音狀態）
 # ============================================================================
 ACTIVE_SESSION_MARKER = Path("transcripts/.active_session.json")
+TRANSCRIPT_SHARE_PORT = 8580  # 主電腦的 transcript 分享 HTTP port
 
 
 def _write_active_session_marker(transcript_path: str, meeting_name: str = "", meeting_topic: str = ""):
-    """錄音開始時寫入 marker，讓其他 session（手機/平板）進入 Viewer 模式"""
+    """錄音開始時寫入 marker，讓其他 session / 機器進入 Viewer 模式"""
     Path("transcripts").mkdir(exist_ok=True)
     marker = {
         "transcript_path": transcript_path,
@@ -293,18 +300,38 @@ def _write_active_session_marker(transcript_path: str, meeting_name: str = "", m
 
 
 def _read_active_session_marker() -> dict | None:
-    """讀取 active session marker，不存在或超過 12 小時視為過期"""
+    """讀取本機 active session marker，不存在或超過 12 小時視為過期"""
     if not ACTIVE_SESSION_MARKER.exists():
         return None
     try:
         marker = json.loads(ACTIVE_SESSION_MARKER.read_text(encoding='utf-8'))
-        # 超過 12 小時視為殘留 marker，自動清除
         started = datetime.fromisoformat(marker.get("started_at", ""))
         if (datetime.now() - started).total_seconds() > 43200:
             ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
             return None
+        marker['_source'] = 'local'
         return marker
     except (json.JSONDecodeError, OSError, ValueError):
+        return None
+
+
+def _read_remote_marker(host_ip: str) -> dict | None:
+    """從主電腦的 HTTP server 讀取 active session marker"""
+    if not host_ip:
+        return None
+    url = f"http://{host_ip}:{TRANSCRIPT_SHARE_PORT}/.active_session.json"
+    content = _fetch_remote_file(url)
+    if not content:
+        return None
+    try:
+        marker = json.loads(content)
+        started = datetime.fromisoformat(marker.get("started_at", ""))
+        if (datetime.now() - started).total_seconds() > 43200:
+            return None
+        marker['_source'] = 'remote'
+        marker['_remote_host'] = host_ip
+        return marker
+    except (json.JSONDecodeError, ValueError):
         return None
 
 
@@ -314,21 +341,50 @@ def _clear_active_session_marker():
         ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
 
 
-def _parse_live_transcript_file(file_path: str) -> list[dict]:
+# ============================================================================
+# Transcript 分享 HTTP Server（主電腦用，讓子電腦讀取 transcripts/）
+# ============================================================================
+_transcript_server_started = False
+
+
+class _QuietHTTPHandler(SimpleHTTPRequestHandler):
+    """不輸出 access log 的 HTTP handler"""
+    def log_message(self, format, *args):
+        pass  # 靜默，避免 console 充斥 HTTP log
+
+
+def _start_transcript_server():
+    """啟動背景 HTTP server，提供 transcripts/ 目錄的檔案"""
+    global _transcript_server_started
+    if _transcript_server_started:
+        return
+    try:
+        handler = partial(_QuietHTTPHandler, directory="transcripts")
+        server = HTTPServer(("0.0.0.0", TRANSCRIPT_SHARE_PORT), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        _transcript_server_started = True
+        logger.info(f"📡 Transcript 分享 server 已啟動 (port {TRANSCRIPT_SHARE_PORT})")
+    except OSError as e:
+        logger.warning(f"📡 Transcript server 啟動失敗（port {TRANSCRIPT_SHARE_PORT} 可能已被佔用）：{e}")
+
+
+def _fetch_remote_file(url: str) -> str | None:
+    """從遠端 HTTP URL 讀取文字內容"""
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.read().decode('utf-8')
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def _parse_live_transcript_content(content: str) -> list[dict]:
     """
-    解析 live transcript 檔案，回傳 feed items 列表。
+    解析 live transcript 內容字串，回傳 feed items 列表。
     格式：[HH:MM:SS] (延遲：X.XX秒)\\n語言：文字\\n---...
     """
-    if not file_path or not Path(file_path).exists():
-        return []
-
-    try:
-        content = Path(file_path).read_text(encoding='utf-8')
-    except OSError:
-        return []
-
     items = []
-    # 用分隔線切割每個 entry
     entries = content.split("-" * 60)
     for entry in entries:
         entry = entry.strip()
@@ -343,14 +399,13 @@ def _parse_live_transcript_file(file_path: str) -> list[dict]:
             line = line.strip()
             if not line:
                 continue
-            # 標題行跳過
-            if line.startswith("即時會議") or line.startswith("會議名稱") or line.startswith("會議主題") or line.startswith("開始時間") or line.startswith("對應錄音"):
+            if line.startswith("即時會議") or line.startswith("Real-time") or \
+               line.startswith("會議名稱") or line.startswith("會議主題") or \
+               line.startswith("開始時間") or line.startswith("對應錄音"):
                 continue
-            # 時間戳行：[HH:MM:SS]
             if line.startswith("[") and "]" in line:
                 timestamp = line[1:line.index("]")]
                 continue
-            # 語言行：語言標籤：文字
             if "：" in line:
                 label, _, text = line.partition("：")
                 if text:
@@ -360,6 +415,31 @@ def _parse_live_transcript_file(file_path: str) -> list[dict]:
             items.append({"timestamp": timestamp, "texts": texts})
 
     return items
+
+
+def _parse_live_transcript_file(file_path: str, remote_host: str = "") -> list[dict]:
+    """
+    解析 live transcript 檔案（支援本機或遠端）。
+
+    Args:
+        file_path: 檔案路徑（本機用完整路徑，遠端用檔名）
+        remote_host: 遠端主電腦 IP（空字串表示讀本機）
+    """
+    if remote_host:
+        filename = Path(file_path).name
+        url = f"http://{remote_host}:{TRANSCRIPT_SHARE_PORT}/{filename}"
+        content = _fetch_remote_file(url)
+        if not content:
+            return []
+        return _parse_live_transcript_content(content)
+    else:
+        if not file_path or not Path(file_path).exists():
+            return []
+        try:
+            content = Path(file_path).read_text(encoding='utf-8')
+        except OSError:
+            return []
+        return _parse_live_transcript_content(content)
 
 
 def save_transcript_to_file(transcripts: list, meeting_name: str = "", meeting_topic: str = "", language_selection: str = "all") -> str:
@@ -914,6 +994,7 @@ def _render_viewer_mode(marker: dict):
     transcript_path = marker.get("transcript_path", "")
     meeting_name = marker.get("meeting_name", "") or "Untitled meeting"
     meeting_topic = marker.get("meeting_topic", "") or "Topic not set"
+    remote_host = marker.get("_remote_host", "")  # 空 = 本機, 有值 = 遠端
 
     st.markdown(get_main_css(), unsafe_allow_html=True)
 
@@ -945,12 +1026,15 @@ def _render_viewer_mode(marker: dict):
     @st.fragment(run_every=timedelta(seconds=2))
     def _viewer_feed():
         # 檢查 marker 是否還存在（錄音是否已結束）
-        current_marker = _read_active_session_marker()
+        if remote_host:
+            current_marker = _read_remote_marker(remote_host)
+        else:
+            current_marker = _read_active_session_marker()
         if not current_marker:
             st.warning("⏹ 錄音已結束。點擊「返回主畫面」繼續使用。")
             return
 
-        items = _parse_live_transcript_file(transcript_path)
+        items = _parse_live_transcript_file(transcript_path, remote_host=remote_host)
 
         # 將解析結果轉為 feed_items 格式（與 get_feed_items 輸出一致）
         viewer_lang_label = get_file_language_label(viewer_flow_lang)
@@ -1044,16 +1128,23 @@ def main():
     """主程式"""
     init_session_state()
 
+    # 啟動 transcript 分享 HTTP server（每台電腦都啟動，供其他機器讀取）
+    _start_transcript_server()
+
     # ========================================================================
-    # Viewer Mode：手動切換，檢視其他裝置的即時翻譯
+    # Viewer Mode：手動切換，檢視主電腦的即時翻譯
     # ========================================================================
     if st.session_state.viewer_mode and not st.session_state.is_recording:
-        active_marker = _read_active_session_marker()
+        viewer_host = st.session_state.get('viewer_host', '')
+        # 優先查遠端（有設定主電腦 IP 時），其次查本機
+        if viewer_host:
+            active_marker = _read_remote_marker(viewer_host)
+        else:
+            active_marker = _read_active_session_marker()
         if active_marker:
             _render_viewer_mode(active_marker)
             return
         else:
-            # marker 不存在（沒有裝置在錄音），自動退出 viewer mode
             st.session_state.viewer_mode = False
 
     # ========================================================================
@@ -1493,6 +1584,29 @@ def main():
                 else:
                     st.warning("請填寫原文和對應翻譯")
 
+        # Live Viewer 設定（跨機器觀看主電腦的錄音）
+        with st.expander("📡 Live Viewer 設定", expanded=False):
+            st.markdown("**連線到主電腦觀看即時翻譯**")
+            st.caption("輸入主電腦的 IP 位址後，本機即可觀看主電腦的 Reading Flow。留空表示只檢查本機。")
+            viewer_host_input = st.text_input(
+                "主電腦 IP",
+                value=st.session_state.get('viewer_host', ''),
+                placeholder="例如：192.168.31.64",
+                key='viewer_host_input',
+                disabled=st.session_state.is_recording
+            )
+            if viewer_host_input != st.session_state.get('viewer_host', ''):
+                st.session_state.viewer_host = viewer_host_input.strip()
+                config_manager.save_setting('viewer_host', viewer_host_input.strip())
+            if st.session_state.get('viewer_host'):
+                # 連線測試
+                test_url = f"http://{st.session_state.viewer_host}:{TRANSCRIPT_SHARE_PORT}/"
+                try:
+                    with urllib.request.urlopen(test_url, timeout=2):
+                        st.success(f"✅ 已連線到 {st.session_state.viewer_host}:{TRANSCRIPT_SHARE_PORT}")
+                except (urllib.error.URLError, OSError):
+                    st.warning(f"⚠️ 無法連線到 {st.session_state.viewer_host}:{TRANSCRIPT_SHARE_PORT}")
+
         if st.session_state.live_transcript_path and Path(st.session_state.live_transcript_path).exists():
             st.divider()
             st.markdown("<div class='section-label'>Live File</div>", unsafe_allow_html=True)
@@ -1508,10 +1622,15 @@ def main():
 
     @st.fragment(run_every=_viewer_poll)
     def _check_remote_session():
-        """自動偵測是否有其他裝置正在錄音，顯示 Live Viewer 入口"""
+        """自動偵測是否有其他裝置正在錄音（本機 + 遠端），顯示 Live Viewer 入口"""
         if st.session_state.is_recording:
             return
-        marker = _read_active_session_marker()
+        # 優先查遠端（有設定主電腦 IP 時），其次查本機
+        viewer_host = st.session_state.get('viewer_host', '')
+        if viewer_host:
+            marker = _read_remote_marker(viewer_host)
+        else:
+            marker = _read_active_session_marker()
         if marker:
             viewer_name = marker.get('meeting_name', '錄音')
             viewer_topic = marker.get('meeting_topic', '')

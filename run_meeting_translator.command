@@ -239,6 +239,10 @@ if [ -n "${LAN_IP:-}" ]; then
   echo "  📱 手機 / 同 WiFi 裝置："
   echo "     http://$LAN_IP:$PORT"
   echo ""
+  echo "  📡 子電腦 Live Viewer 設定："
+  echo "     主電腦 IP = $LAN_IP"
+  echo "     (在子電腦的側邊欄「📡 Live Viewer 設定」中輸入)"
+  echo ""
 fi
 
 # Parallels VM 常用閘道 IP
