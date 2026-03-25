@@ -951,7 +951,7 @@ def _render_viewer_mode(marker: dict):
     )
     viewer_lang_label = selected_label
 
-    # 自動刷新的 fragment
+    # 自動刷新的 fragment（最新翻譯顯示在最上面，手機不需滾動）
     @st.fragment(run_every=timedelta(seconds=2))
     def _viewer_feed():
         # 檢查 marker 是否還存在（錄音是否已結束）
@@ -962,47 +962,40 @@ def _render_viewer_mode(marker: dict):
 
         items = _parse_live_transcript_file(transcript_path)
         if not items:
-            st.info("等待翻譯結果中...")
+            st.info("⏳ 等待翻譯結果中...")
             return
 
-        # 篩選選定語言的文字
-        feed_lines = []
-        for item in items:
+        total_count = len(items)
+
+        # 狀態列
+        st.markdown(
+            f"<div style='background:#1a3a1a; color:#6f6; padding:0.4rem 0.8rem; "
+            f"border-radius:0.5rem; text-align:center; font-size:0.85rem; margin-bottom:0.5rem;'>"
+            f"🔴 LIVE — {total_count} 筆翻譯</div>",
+            unsafe_allow_html=True
+        )
+
+        # 反轉順序：最新的在最上面（手機不用滾動）
+        for item in reversed(items):
             ts = item["timestamp"]
             # 找到選定語言標籤對應的文字
             text = item["texts"].get(viewer_lang_label, "")
             if not text:
                 # fallback：用第一個可用的語言
                 text = next(iter(item["texts"].values()), "")
-            if text:
-                feed_lines.append(f"<span style='opacity:0.5; font-size:0.85em;'>[{ts}]</span> {html_module.escape(text)}")
+            if not text:
+                continue
 
-        total_count = len(feed_lines)
-
-        # 顯示 feed（手機友善的大字 scrollable 面板）
-        feed_html = "<br><br>".join(feed_lines) if feed_lines else "<em>尚無內容</em>"
-        st.components.v1.html(
-            f"""
-            <!DOCTYPE html>
-            <html><head><meta name="viewport" content="width=device-width, initial-scale=1">
-            <style>
-                * {{ margin:0; padding:0; box-sizing:border-box; }}
-                body {{ font-family: -apple-system, sans-serif; background: #111; color: #eee; }}
-                .feed {{ padding: 1rem; font-size: 1.15rem; line-height: 1.8; }}
-                .status {{ padding: 0.5rem 1rem; background: #1a3a1a; color: #6f6;
-                           font-size: 0.85rem; text-align: center; }}
-            </style></head><body>
-            <div class="status">🔴 LIVE — {total_count} 筆翻譯</div>
-            <div class="feed" id="f">{feed_html}</div>
-            <script>
-                var f=document.getElementById('f');
-                f.scrollTop=f.scrollHeight;
-            </script>
-            </body></html>
-            """,
-            height=600,
-            scrolling=True
-        )
+            # 用 Streamlit 原生元件，避免 iframe 滾動問題
+            st.markdown(
+                f"<div style='margin-bottom:0.75rem; padding:0.6rem 0.8rem; "
+                f"background:rgba(255,255,255,0.05); border-radius:0.5rem; "
+                f"border-left:3px solid #6f6;'>"
+                f"<span style='opacity:0.45; font-size:0.8em;'>{ts}</span><br>"
+                f"<span style='font-size:1.1rem; line-height:1.7;'>"
+                f"{html_module.escape(text)}</span></div>",
+                unsafe_allow_html=True
+            )
 
     _viewer_feed()
 
