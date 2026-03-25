@@ -1475,6 +1475,21 @@ def main():
             )
 
     # ========================================================================
+    # Live Viewer 入口（放在 fragment 外面，確保每次頁面渲染都會檢查）
+    # ========================================================================
+    if not st.session_state.is_recording:
+        _remote_marker = _read_active_session_marker()
+        if _remote_marker:
+            _viewer_name = _remote_marker.get('meeting_name', '錄音')
+            st.info(
+                f"📡 **另一台裝置正在錄音中** — {_viewer_name}",
+                icon="📡"
+            )
+            if st.button("📡 進入 Live Viewer 觀看即時翻譯", use_container_width=True, type="secondary"):
+                st.session_state.viewer_mode = True
+                st.rerun()
+
+    # ========================================================================
     # ========================================================================
     # 主畫面（使用 st.fragment 減少錄音中的全頁閃爍）
     # ========================================================================
@@ -1598,13 +1613,7 @@ def main():
             unsafe_allow_html=True
         )
 
-        # 檢查是否有其他裝置正在錄音（用於顯示 Live Viewer 按鈕）
-        _has_remote_session = (
-            not st.session_state.is_recording
-            and _read_active_session_marker() is not None
-        )
-
-        col1, col2, col3, col4 = st.columns([2.1, 1.15, 2.1, 2.65])
+        col1, col2, col3, col_spacer = st.columns([2.1, 1.15, 2.1, 2.65])
 
         with col1:
             if st.button(
@@ -1639,13 +1648,6 @@ def main():
                 stop_recording()
                 _force_sync_widget_keys()
                 st.rerun(scope="app")
-
-        with col4:
-            if _has_remote_session:
-                if st.button("📡 Live Viewer", use_container_width=True,
-                             help="觀看其他裝置正在進行的即時翻譯"):
-                    st.session_state.viewer_mode = True
-                    st.rerun()
 
         st.markdown("<div class='control-caption'>Session Snapshot</div>", unsafe_allow_html=True)
         metric_cols = st.columns(4)
