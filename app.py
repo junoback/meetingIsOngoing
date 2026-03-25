@@ -907,102 +907,129 @@ def stop_recording():
 
 def _render_viewer_mode(marker: dict):
     """
-    遠端 Viewer 模式：讀取電腦端正在寫入的 live transcript 檔案，
-    即時顯示翻譯結果。適用於手機、平板、Parallels VM 等。
+    遠端 Viewer 模式：讀取主電腦正在寫入的 live transcript 檔案，
+    使用與主畫面相同的 Reading Flow 面板顯示。
+    適用於手機、平板、Parallels VM 等。
     """
     transcript_path = marker.get("transcript_path", "")
-    meeting_name = marker.get("meeting_name", "")
-    meeting_topic = marker.get("meeting_topic", "")
-    started_at = marker.get("started_at", "")
+    meeting_name = marker.get("meeting_name", "") or "Untitled meeting"
+    meeting_topic = marker.get("meeting_topic", "") or "Topic not set"
 
     st.markdown(get_main_css(), unsafe_allow_html=True)
 
-    # 標題 + 返回按鈕
-    col_back, col_title = st.columns([1, 4])
-    with col_back:
-        if st.button("← 返回主畫面", use_container_width=True):
-            st.session_state.viewer_mode = False
-            st.rerun()
-    with col_title:
-        st.markdown(
-            "<div style='padding: 0.3rem 0;'>"
-            "<h2 style='margin:0;'>📡 Live Viewer</h2>"
-            "<p style='opacity:0.7; margin:0.25rem 0 0; font-size:0.9rem;'>"
-            "即時翻譯檢視模式 — 由另一台裝置錄音中</p>"
-            "</div>",
-            unsafe_allow_html=True
+    # 返回按鈕（小巧不佔空間）
+    if st.button("← 返回主畫面", key='viewer_back'):
+        st.session_state.viewer_mode = False
+        st.rerun()
+
+    # 語言選擇（與主畫面相同的 LANGUAGE_OPTIONS）
+    viewer_language_options = list(LANGUAGE_OPTIONS.keys())
+    viewer_default_idx = viewer_language_options.index('zh') if 'zh' in viewer_language_options else 0
+
+    flow_selector_col, flow_selector_spacer = st.columns([2.3, 3.7])
+    with flow_selector_col:
+        st.markdown("<div class='section-label'>Reading Flow Language</div>", unsafe_allow_html=True)
+        viewer_flow_lang = st.selectbox(
+            "Reading Flow Language",
+            viewer_language_options,
+            index=viewer_default_idx,
+            format_func=get_language_label,
+            key='viewer_flow_language',
+            label_visibility="collapsed"
         )
 
-    # 會議資訊
-    info_parts = []
-    if meeting_name:
-        info_parts.append(f"**會議：** {meeting_name}")
-    if meeting_topic:
-        info_parts.append(f"**主題：** {meeting_topic}")
-    if started_at:
-        try:
-            start_dt = datetime.fromisoformat(started_at)
-            info_parts.append(f"**開始：** {start_dt.strftime('%H:%M:%S')}")
-        except ValueError:
-            pass
-    if info_parts:
-        st.markdown(" · ".join(info_parts))
+    # 從檔案語言標籤到語言代碼的對照
+    _file_label_to_code = {v: k for k, v in LANGUAGE_FILE_LABELS.items()}
 
-    st.divider()
-
-    # 語言選擇
-    language_labels = {"日語": "ja", "英文": "en", "中文": "zh"}
-    selected_label = st.selectbox(
-        "顯示語言 Display Language",
-        list(language_labels.keys()),
-        index=2,  # 預設中文
-        key='viewer_language'
-    )
-    viewer_lang_label = selected_label
-
-    # 自動刷新的 fragment（最新翻譯顯示在最上面，手機不需滾動）
+    # 自動刷新的 fragment — 使用與主畫面相同的 Reading Flow 面板
     @st.fragment(run_every=timedelta(seconds=2))
     def _viewer_feed():
         # 檢查 marker 是否還存在（錄音是否已結束）
         current_marker = _read_active_session_marker()
         if not current_marker:
-            st.warning("錄音已結束。重新整理頁面回到主介面。")
+            st.warning("⏹ 錄音已結束。點擊「返回主畫面」繼續使用。")
             return
 
         items = _parse_live_transcript_file(transcript_path)
-        if not items:
-            st.info("⏳ 等待翻譯結果中...")
-            return
 
-        total_count = len(items)
-
-        # 狀態列
-        st.markdown(
-            f"<div style='background:#1a3a1a; color:#6f6; padding:0.4rem 0.8rem; "
-            f"border-radius:0.5rem; text-align:center; font-size:0.85rem; margin-bottom:0.5rem;'>"
-            f"🔴 LIVE — {total_count} 筆翻譯</div>",
-            unsafe_allow_html=True
-        )
-
-        # 反轉順序：最新的在最上面（手機不用滾動）
-        for item in reversed(items):
-            ts = item["timestamp"]
-            # 找到選定語言標籤對應的文字
+        # 將解析結果轉為 feed_items 格式（與 get_feed_items 輸出一致）
+        viewer_lang_label = get_file_language_label(viewer_flow_lang)
+        feed_items = []
+        for item in items:
             text = item["texts"].get(viewer_lang_label, "")
             if not text:
-                # fallback：用第一個可用的語言
-                text = next(iter(item["texts"].values()), "")
+                # fallback：嘗試用語言代碼反查
+                for label, t in item["texts"].items():
+                    code = _file_label_to_code.get(label)
+                    if code == viewer_flow_lang and t:
+                        text = t
+                        break
             if not text:
-                continue
+                # 最終 fallback：用第一個可用的語言
+                text = next(iter(item["texts"].values()), "")
+            if text:
+                feed_items.append({"timestamp": item["timestamp"], "text": text})
 
-            # 用 Streamlit 原生元件，避免 iframe 滾動問題
+        visible_feed_items, hidden = limit_visible_items(feed_items, MAX_VISIBLE_FEED_ITEMS)
+
+        # 使用與主畫面完全相同的 Reading Flow 面板
+        status_metadata = {
+            "label": "Live Viewer",
+            "description": "正在接收另一台裝置的即時翻譯",
+            "css_class": "status-recording",
+            "icon_html": "<span class='status-icon'>📡</span>"
+        }
+
+        hero_col1, hero_col2 = st.columns([5, 1])
+        with hero_col1:
+            render_live_feed_panel(
+                visible_feed_items,
+                viewer_flow_lang,
+                status_metadata,
+                meeting_name,
+                meeting_topic,
+                is_recording=True  # 讓面板顯示「錄音中」樣式
+            )
+            if hidden > 0:
+                st.caption(
+                    f"僅顯示最近 {len(visible_feed_items)} 段內容。完整記錄在逐字稿檔案中。"
+                )
+
+        with hero_col2:
+            total_count = len(feed_items)
+            started_at = current_marker.get("started_at", "")
+            elapsed_str = ""
+            if started_at:
+                try:
+                    start_dt = datetime.fromisoformat(started_at)
+                    elapsed = datetime.now() - start_dt
+                    mins = int(elapsed.total_seconds() // 60)
+                    secs = int(elapsed.total_seconds() % 60)
+                    elapsed_str = f"{mins}:{secs:02d}"
+                except ValueError:
+                    pass
+
             st.markdown(
-                f"<div style='margin-bottom:0.75rem; padding:0.6rem 0.8rem; "
-                f"background:rgba(255,255,255,0.05); border-radius:0.5rem; "
-                f"border-left:3px solid #6f6;'>"
-                f"<span style='opacity:0.45; font-size:0.8em;'>{ts}</span><br>"
-                f"<span style='font-size:1.1rem; line-height:1.7;'>"
-                f"{html_module.escape(text)}</span></div>",
+                f"""
+                <div class='status-panel'>
+                    <div class='status-panel-title'>Viewer Status</div>
+                    <div class='status-badge status-recording'>
+                        <span class='status-icon'>📡</span>
+                        <span>Live Viewer</span>
+                    </div>
+                    <div class='status-panel-copy'>正在接收另一台裝置的即時翻譯</div>
+                    <div class='status-grid'>
+                        <div class='status-mini'>
+                            <div class='status-mini-label'>Lines</div>
+                            <div class='status-mini-value'>{total_count}</div>
+                        </div>
+                        <div class='status-mini'>
+                            <div class='status-mini-label'>Elapsed</div>
+                            <div class='status-mini-value'>{elapsed_str or '—'}</div>
+                        </div>
+                    </div>
+                </div>
+                """,
                 unsafe_allow_html=True
             )
 
