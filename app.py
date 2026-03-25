@@ -143,6 +143,8 @@ def init_session_state():
         st.session_state.mode = LEGACY_MODE_ALIASES[st.session_state.mode]
     if 'reading_flow_language' not in st.session_state:
         st.session_state.reading_flow_language = st.session_state.target_language
+    if 'viewer_mode' not in st.session_state:
+        st.session_state.viewer_mode = False
 
 
 
@@ -915,14 +917,21 @@ def _render_viewer_mode(marker: dict):
 
     st.markdown(get_main_css(), unsafe_allow_html=True)
 
-    # 標題
-    st.markdown(
-        "<div style='text-align:center; padding: 0.5rem 0;'>"
-        "<h2 style='margin:0;'>📡 Live Viewer</h2>"
-        "<p style='opacity:0.7; margin:0.25rem 0 0;'>即時翻譯檢視模式 — 由另一台裝置錄音中</p>"
-        "</div>",
-        unsafe_allow_html=True
-    )
+    # 標題 + 返回按鈕
+    col_back, col_title = st.columns([1, 4])
+    with col_back:
+        if st.button("← 返回主畫面", use_container_width=True):
+            st.session_state.viewer_mode = False
+            st.rerun()
+    with col_title:
+        st.markdown(
+            "<div style='padding: 0.3rem 0;'>"
+            "<h2 style='margin:0;'>📡 Live Viewer</h2>"
+            "<p style='opacity:0.7; margin:0.25rem 0 0; font-size:0.9rem;'>"
+            "即時翻譯檢視模式 — 由另一台裝置錄音中</p>"
+            "</div>",
+            unsafe_allow_html=True
+        )
 
     # 會議資訊
     info_parts = []
@@ -1009,13 +1018,16 @@ def main():
     init_session_state()
 
     # ========================================================================
-    # Viewer Mode 檢測：如果本 session 沒在錄音，但有其他 session 正在錄音
+    # Viewer Mode：手動切換，檢視其他裝置的即時翻譯
     # ========================================================================
-    if not st.session_state.is_recording:
+    if st.session_state.viewer_mode and not st.session_state.is_recording:
         active_marker = _read_active_session_marker()
         if active_marker:
             _render_viewer_mode(active_marker)
             return
+        else:
+            # marker 不存在（沒有裝置在錄音），自動退出 viewer mode
+            st.session_state.viewer_mode = False
 
     # ========================================================================
     # 側邊欄
@@ -1586,7 +1598,13 @@ def main():
             unsafe_allow_html=True
         )
 
-        col1, col2, col3, col_spacer = st.columns([2.1, 1.15, 2.1, 2.65])
+        # 檢查是否有其他裝置正在錄音（用於顯示 Live Viewer 按鈕）
+        _has_remote_session = (
+            not st.session_state.is_recording
+            and _read_active_session_marker() is not None
+        )
+
+        col1, col2, col3, col4 = st.columns([2.1, 1.15, 2.1, 2.65])
 
         with col1:
             if st.button(
@@ -1621,6 +1639,13 @@ def main():
                 stop_recording()
                 _force_sync_widget_keys()
                 st.rerun(scope="app")
+
+        with col4:
+            if _has_remote_session:
+                if st.button("📡 Live Viewer", use_container_width=True,
+                             help="觀看其他裝置正在進行的即時翻譯"):
+                    st.session_state.viewer_mode = True
+                    st.rerun()
 
         st.markdown("<div class='control-caption'>Session Snapshot</div>", unsafe_allow_html=True)
         metric_cols = st.columns(4)
