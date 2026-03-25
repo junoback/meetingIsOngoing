@@ -151,6 +151,8 @@ def init_session_state():
         st.session_state.viewer_mode = False
     if 'viewer_host' not in st.session_state:
         st.session_state.viewer_host = config_manager.get_setting('viewer_host', '')
+    if '_has_ever_recorded' not in st.session_state:
+        st.session_state._has_ever_recorded = False
 
 
 
@@ -899,6 +901,7 @@ def start_recording():
         )
         st.session_state.is_recording = True
         st.session_state.is_paused = False
+        st.session_state._has_ever_recorded = True
         add_debug_log(f"✅ 錄音已開始，檔案：{recording_file}")
 
         # 啟動處理控制器
@@ -1132,20 +1135,32 @@ def main():
     _start_transcript_server()
 
     # ========================================================================
-    # Viewer Mode：手動切換，檢視主電腦的即時翻譯
+    # Viewer Mode：檢視主電腦（或本機其他 session）的即時翻譯
     # ========================================================================
-    if st.session_state.viewer_mode and not st.session_state.is_recording:
+    if not st.session_state.is_recording:
         viewer_host = st.session_state.get('viewer_host', '')
-        # 優先查遠端（有設定主電腦 IP 時），其次查本機
-        if viewer_host:
-            active_marker = _read_remote_marker(viewer_host)
-        else:
-            active_marker = _read_active_session_marker()
-        if active_marker:
-            _render_viewer_mode(active_marker)
-            return
-        else:
-            st.session_state.viewer_mode = False
+
+        # 自動偵測：從未錄過音的 session（= 新連線的子裝置）+ 有其他 session 在錄音
+        # → 自動進入 viewer。曾經錄音的 session（= 主操作者）不會被強制進入。
+        if not st.session_state.viewer_mode and not st.session_state._has_ever_recorded:
+            if viewer_host:
+                auto_marker = _read_remote_marker(viewer_host)
+            else:
+                auto_marker = _read_active_session_marker()
+            if auto_marker:
+                st.session_state.viewer_mode = True
+
+        # 進入 Viewer Mode
+        if st.session_state.viewer_mode:
+            if viewer_host:
+                active_marker = _read_remote_marker(viewer_host)
+            else:
+                active_marker = _read_active_session_marker()
+            if active_marker:
+                _render_viewer_mode(active_marker)
+                return
+            else:
+                st.session_state.viewer_mode = False
 
     # ========================================================================
     # 側邊欄
