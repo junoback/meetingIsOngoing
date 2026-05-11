@@ -1,7 +1,7 @@
 # Current Sprint
 
-> Updated: 2026-03-24
-> Sprint goal: **Sprint 6 — Polish, bug fixes, memory management**
+> Updated: 2026-05-11
+> Sprint goal: **Sprint 6 — Polish, bug fixes, memory management** (complete; post-sprint maintenance ongoing)
 
 ## Sprint Tasks
 
@@ -37,10 +37,25 @@
 - P2-05 (speaker diarization) — large effort, high risk, deferred
 
 ## Session Handoff Notes
+
+### Latest (2026-05-11)
+Post-sprint maintenance — two bug fixes + default change, all pushed to GitHub:
+- `6e48ceb` Fix stale marker auto-Viewer + transcript server bind warning. Key
+  finding documented in DEVLOG: `st.rerun(scope="app")` re-executes the
+  module body with fresh globals, so module-level flags reset. Use `sys`
+  attributes for process-level state instead.
+- `73a55a7` Set bundled defaults to Groq Whisper + DeepSeek V3 (cost-optimized).
+  Existing installs unaffected (local config takes priority).
+- 147 tests pass. Run with: `.venv/bin/python -m pytest tests/ -v`
+
+### Prior (Sprint 6, 2026-03-24)
 Sprint 6 complete. All settings now auto-persist. Terminology works for all languages.
-147 automated tests. Run with: `.venv/bin/python -m pytest tests/ -v`
-Future work:
+
+### Future work / open ideas
 - P2-05 speaker diarization (if needed)
 - Integration/E2E tests (would need Streamlit test harness)
 - Meeting summary generation (GPT-based post-session summary)
 - Auto-detect BlackHole audio device availability
+- `_last_persisted` cache in app.py resets on scope="app" rerun (silently
+  inefficient but not broken) — same sys-attribute pattern would fix it
+  if we ever care about the tiny extra config_manager.get_setting() calls.
