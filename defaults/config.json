@@ -5,5 +5,7 @@
   "show_bilingual": true,
   "chunk_duration": 10,
   "silence_threshold": 0.01,
-  "selected_device": "BlackHole 2ch"
+  "selected_device": "BlackHole 2ch",
+  "stt_provider": "groq_whisper",
+  "translation_provider": "deepseek"
 }
