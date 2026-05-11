@@ -5,6 +5,39 @@
 
 ---
 
+## 2026-05-11 — Session: Stale marker + transcript server warning (proper fix)
+
+### What was done
+- **Commit `6e48ceb`**: Fix two bugs that both stem from Streamlit's `st.rerun(scope="app")` re-executing the script's module body with fresh globals.
+- **Bug A — stale marker triggers auto-Viewer**: `_write_active_session_marker()` now stores `os.getpid()`; `_cleanup_stale_marker_on_startup()` runs once at process startup (guarded by `sys._mt_stale_marker_checked`) and deletes markers whose owner PID is dead OR which lack a PID (legacy format). Marker whose PID == `os.getpid()` is kept.
+- **Bug B — spurious "port 8580 already in use" warning**: `_start_transcript_server()` switched from module-level `_transcript_server_started` flag to `sys._mt_transcript_server_started`. The sys attribute survives module re-execution, so the bind is attempted exactly once per process.
+- Pre-existing 147 tests still pass; no new tests added (both fixes are integration-level behavior best verified by running the app, which we did manually with multiple stop/start cycles).
+
+### Issues encountered & key finding
+**Streamlit's two flavors of rerun** (poorly documented, the key insight from this session):
+- A normal button-click rerun re-calls `main()` but reuses the module's globals dict, so module-level variables survive.
+- `st.rerun(scope="app")` (which `start_recording()` calls at end) re-executes the entire module body with **fresh globals** — equivalent to a fresh `exec(code, new_globals)`. Any `_module_level_flag = False` line resets the flag.
+
+Evidence captured during debug:
+- Added one-line DEBUG log at module level checking `globals().get('_transcript_server_started')`.
+- On scope="app" rerun, prev flag = `<unset>` (not the expected `True`), proving the globals dict is fresh.
+- Same effect would apply to `_last_persisted: dict = {}` (settings-persist cache) — it gets reset on every scope="app" rerun, which is functionally correct but defeats the optimization. Not fixing for now; it's silently inefficient, not broken.
+
+### Decisions
+- **Use `sys` attributes for process-level state** that must survive module re-execution. Module-level flags don't work in this codebase because `start_recording()` triggers scope="app" rerun.
+- Cleanup runs **once per process** via sys guard — never on subsequent reruns. Critical so it can't accidentally delete a marker we just wrote in `start_recording()`.
+- A previous session (commit `cd75526`, rolled back during this session) had attempted the marker fix but contained a latent bug: when `owner_pid == os.getpid()` it would "delete as safety" — which would delete the marker the current session just wrote (after `st.rerun(scope="app")` re-ran cleanup). Corrected here: same-PID marker is kept.
+- Two commits were rolled back mid-session (`cd75526` stale-marker + `bb79a4f` SO_REUSEADDR) under the wrong belief that the bugs were worktree artifacts. The hard reset was safe (neither was pushed). Re-implemented both fixes from scratch with the correct sys-attribute pattern. Details in `SESSION_HANDOFF_20260511.md` (correction at top).
+
+### Related files
+- [app.py:7-18](app.py:7-18) — added `import os`, `import sys`
+- [app.py:292-302](app.py:292-302) — `_write_active_session_marker` now stores `pid`
+- [app.py:346-403](app.py:346-403) — new `_pid_alive()` and `_cleanup_stale_marker_on_startup()`
+- [app.py:410-426](app.py:410-426) — `_start_transcript_server` uses sys attribute
+- [app.py:1132-1138](app.py:1132-1138) — `main()` calls cleanup before viewer detection
+
+---
+
 ## 2026-03-24 — Session: Sprint 6 — Widget Reset Bug Fix & Polish
 
 ### What was done
