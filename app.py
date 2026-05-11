@@ -6,6 +6,8 @@
 
 import streamlit as st
 import logging
+import os
+import sys
 import time
 import json
 import urllib.request
@@ -297,6 +299,7 @@ def _write_active_session_marker(transcript_path: str, meeting_name: str = "", m
         "meeting_name": meeting_name,
         "meeting_topic": meeting_topic,
         "started_at": datetime.now().isoformat(),
+        "pid": os.getpid(),
     }
     ACTIVE_SESSION_MARKER.write_text(json.dumps(marker, ensure_ascii=False), encoding='utf-8')
 
@@ -343,10 +346,60 @@ def _clear_active_session_marker():
         ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
 
 
+def _pid_alive(pid: int) -> bool:
+    """檢查指定 PID 的 process 是否還活著（macOS / Linux）"""
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # process 存在但不是我們能 signal 的 → 視為活著
+        return True
+    except OSError:
+        return False
+
+
+def _cleanup_stale_marker_on_startup():
+    """
+    行程啟動時清除上一個被 kill 留下的 stale marker（owner PID 已死）。
+    用 sys 屬性做 process-level guard，避免 Streamlit scope="app" rerun 重複跑。
+    """
+    if getattr(sys, "_mt_stale_marker_checked", False):
+        return
+    sys._mt_stale_marker_checked = True
+
+    if not ACTIVE_SESSION_MARKER.exists():
+        return
+    try:
+        marker = json.loads(ACTIVE_SESSION_MARKER.read_text(encoding='utf-8'))
+    except (json.JSONDecodeError, OSError):
+        ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
+        logger.info("🧹 清除毀損的 active_session marker")
+        return
+
+    owner_pid = marker.get("pid")
+    if owner_pid is None:
+        ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
+        logger.info("🧹 清除舊格式 active_session marker（無 PID）")
+        return
+
+    if owner_pid == os.getpid():
+        # 是我自己的 marker（理論上啟動時不會發生，保險起見保留）
+        return
+
+    if not _pid_alive(int(owner_pid)):
+        ACTIVE_SESSION_MARKER.unlink(missing_ok=True)
+        logger.info(f"🧹 清除 stale active_session marker (owner PID {owner_pid} 已不存在)")
+    else:
+        logger.info(f"ℹ️ 另一個 Streamlit process (PID {owner_pid}) 仍在錄音，保留 marker")
+
+
 # ============================================================================
 # Transcript 分享 HTTP Server（主電腦用，讓子電腦讀取 transcripts/）
 # ============================================================================
-_transcript_server_started = False
 
 
 class _QuietHTTPHandler(SimpleHTTPRequestHandler):
@@ -357,15 +410,16 @@ class _QuietHTTPHandler(SimpleHTTPRequestHandler):
 
 def _start_transcript_server():
     """啟動背景 HTTP server，提供 transcripts/ 目錄的檔案"""
-    global _transcript_server_started
-    if _transcript_server_started:
+    # 用 sys 屬性做 process-level guard：Streamlit scope="app" rerun 會重設 module-level
+    # 變數但不會動 sys 屬性，這樣同一個 process 只會 bind 一次 port。
+    if getattr(sys, "_mt_transcript_server_started", False):
         return
     try:
         handler = partial(_QuietHTTPHandler, directory="transcripts")
         server = HTTPServer(("0.0.0.0", TRANSCRIPT_SHARE_PORT), handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        _transcript_server_started = True
+        sys._mt_transcript_server_started = True
         logger.info(f"📡 Transcript 分享 server 已啟動 (port {TRANSCRIPT_SHARE_PORT})")
     except OSError as e:
         logger.warning(f"📡 Transcript server 啟動失敗（port {TRANSCRIPT_SHARE_PORT} 可能已被佔用）：{e}")
@@ -1130,6 +1184,9 @@ def _render_viewer_mode(marker: dict):
 def main():
     """主程式"""
     init_session_state()
+
+    # 行程啟動時清除上次留下的 stale marker（必須在 viewer 自動偵測之前）
+    _cleanup_stale_marker_on_startup()
 
     # 啟動 transcript 分享 HTTP server（每台電腦都啟動，供其他機器讀取）
     _start_transcript_server()
