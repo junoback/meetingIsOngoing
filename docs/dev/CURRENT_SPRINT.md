@@ -1,6 +1,6 @@
 # Current Sprint
 
-> Updated: 2026-05-11
+> Updated: 2026-05-14
 > Sprint goal: **Sprint 6 — Polish, bug fixes, memory management** (complete; post-sprint maintenance ongoing)
 
 ## Sprint Tasks
@@ -38,24 +38,47 @@
 
 ## Session Handoff Notes
 
-### Latest (2026-05-11)
-Post-sprint maintenance — two bug fixes + default change, all pushed to GitHub:
-- `6e48ceb` Fix stale marker auto-Viewer + transcript server bind warning. Key
-  finding documented in DEVLOG: `st.rerun(scope="app")` re-executes the
-  module body with fresh globals, so module-level flags reset. Use `sys`
-  attributes for process-level state instead.
-- `73a55a7` Set bundled defaults to Groq Whisper + DeepSeek V3 (cost-optimized).
-  Existing installs unaffected (local config takes priority).
-- 147 tests pass. Run with: `.venv/bin/python -m pytest tests/ -v`
+### Latest (2026-05-14)
+Translation lag fix — pushed to GitHub:
+- `11716b1` Skip English intermediate LLM call when STT lacks
+  `audio.translations` AND target ≠ en. Pipeline drops from 1 STT + 2 LLM
+  to 1 STT + 1 LLM per chunk on Groq + non-EN target. Should resolve the
+  ~4 min queue accumulation lag reported on 1-2 hr meetings with
+  Groq + DeepSeek defaults.
+- 149 tests pass (147 prior + 2 new for the optimized path).
+- Verified `deepseek-chat` already auto-maps to **DeepSeek-V4-Flash
+  non-thinking mode** (newest cheap model). No off-peak discount currently.
+
+### Pickup point for next session
+User wants to test **OpenAI (Whisper + GPT-4o-mini)** as a speed baseline
+comparison. Manual sidebar switch only, no code change needed. Look at
+`transcripts/<meeting>.txt` per-line `(延遲：X.XX秒)` values to compare:
+- If OpenAI is dramatically faster than Groq + DeepSeek even after `11716b1`
+  fix → bottleneck is on DeepSeek's side, not code.
+- If both feel similar → fix is doing its job; remaining lag is API + queue
+  baseline.
+
+### Prior (2026-05-11)
+Two bug fixes for Streamlit rerun model: `6e48ceb` (stale marker auto-Viewer
++ transcript server bind warning) and `73a55a7` (set Groq + DeepSeek as
+bundled defaults). Key finding: `st.rerun(scope="app")` resets module
+globals; use `sys` attributes for process-level state.
 
 ### Prior (Sprint 6, 2026-03-24)
-Sprint 6 complete. All settings now auto-persist. Terminology works for all languages.
+Sprint 6 complete. All settings now auto-persist. Terminology works for all
+languages.
 
 ### Future work / open ideas
 - P2-05 speaker diarization (if needed)
 - Integration/E2E tests (would need Streamlit test harness)
 - Meeting summary generation (GPT-based post-session summary)
 - Auto-detect BlackHole audio device availability
+- Optional chunk-level timing logger (STT-time / LLM-time / queue-wait per
+  chunk) for diagnosing future provider-comparison questions. Defer until
+  needed.
+- Optional: restructure translation system_prompt for DeepSeek cache-hit
+  optimization (~50× cheaper input). Pure cost play, not speed. User said
+  cost is not a concern, so low priority.
 - `_last_persisted` cache in app.py resets on scope="app" rerun (silently
   inefficient but not broken) — same sys-attribute pattern would fix it
   if we ever care about the tiny extra config_manager.get_setting() calls.

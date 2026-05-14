@@ -5,6 +5,96 @@
 
 ---
 
+## 2026-05-14 — Session: Translation lag fix (skip English intermediate)
+
+### What was done
+- **Commit `11716b1`**: For mode `translate_target` with non-OpenAI STT and
+  target language ≠ en, skip the English intermediate LLM call. Pipeline drops
+  from 1 STT + 2 LLM calls per chunk to 1 STT + 1 LLM, matching the OpenAI
+  Whisper path's call count.
+- 2 new unit tests cover the optimized path and the target=en edge case.
+  149/147 tests pass.
+
+### Problem reported
+User reported ~4 min lag between speech and translation appearing after
+1-2 hour meetings using Groq Whisper + DeepSeek-V3 (the new bundled defaults
+from `73a55a7`).
+
+### Root cause
+Single-threaded worker queue grew unbounded because per-chunk processing time
+(~3-5s) exceeded chunk arrival rate (~10s × VAD smart). The extra LLM call
+for English intermediate was the culprit:
+
+```
+ja audio
+  → Groq STT (ja text)               ~0.5s
+  → DeepSeek LLM (ja → en intermediate) ~1.5s    ← REMOVED
+  → DeepSeek LLM (ja → zh, with en context) ~2s
+```
+
+The English intermediate served two purposes: (a) populating `texts['en']`
+for bilingual UI display; (b) providing as reference in the target-translation
+prompt. Neither is strictly necessary for non-English-target use cases with
+modern LLMs.
+
+### Decisions
+- **Skip universally** when STT lacks `audio.translations` AND target ≠ en.
+  Universal across all 7 source/target language combos, not specific to ja→zh.
+- **Keep when target == en** (still needed; no audio.translations available).
+- **Keep on OpenAI Whisper path** unchanged — there it's a free byproduct of
+  the cheap STT call.
+- **Trade-off accepted**: bilingual EN row won't show on non-OpenAI STT.
+  Users wanting EN should switch back to OpenAI Whisper.
+
+### Investigation notes (DeepSeek-side)
+- Verified `deepseek-chat` model now auto-maps to **DeepSeek-V4-Flash
+  non-thinking mode** (per pricing docs, "Legacy model names will be
+  deprecated; for compatibility, they correspond to non-thinking and thinking
+  modes of `deepseek-v4-flash`"). We are already on the newest cheap model.
+- No off-peak hours discount currently advertised on DeepSeek pricing page
+  (was a feature in the V3 era; appears removed in V4).
+- `deepseek-v4-pro` available with 75% off until 2026/05/31 15:59 UTC, but
+  3× more expensive than v4-flash at discount; no published latency benchmark
+  showing pro is faster, and larger model likely means slower.
+- Cache hit pricing ($0.0028/M, ~1/50 of cache miss) is a future cost-saving
+  opportunity by structuring system prompt as cacheable prefix. Not done yet.
+
+### Architecture/timing reference (added for future debugging)
+**Pipeline** (after fix, Groq + non-EN target):
+audio → AudioRecorder.audio_queue → ProcessingController →
+TranscriberWorker.input_queue → [single worker: 1 STT + 1 LLM] →
+output_queue → Streamlit fragment (run_every=2s) → UI.
+
+**Healthy per-chunk latency** (queue empty):
+- Short chunk (3s VAD-cut): ~6s end-to-end
+- Long chunk (10s forced cut): ~14s end-to-end
+
+**chunk_duration setting** (default 10s) controls:
+1. Latency floor (results never appear faster than ~chunk_duration/2 in VAD
+   mode, or full chunk_duration when speech is continuous).
+2. Chunk arrival rate. Worker keep-up requires `processing_time < arrival_interval`.
+   Smaller chunk_duration = more API calls per minute = faster queue accumulation
+   if API is slow.
+
+### Open follow-ups (not blocking)
+- User to test OpenAI (Whisper + GPT-4o-mini) next time as a speed comparison
+  baseline. If OpenAI is dramatically faster than Groq + DeepSeek even after
+  the fix, the bottleneck is on DeepSeek's side (not code).
+- Optional: add chunk-level timing logger that prints per-chunk
+  STT-time / LLM-time / queue-wait-time. Useful for quantifying bottlenecks
+  when comparing providers. Not built — wait until needed.
+- Optional: restructure the translation system_prompt for DeepSeek cache-hit
+  optimization (50× cheaper input). Pure cost play, not speed.
+
+### Related files
+- [transcriber.py:417-450](transcriber.py:417-450) — translate_target mode logic;
+  the `else:` clause was changed to `elif target_language == "en":`.
+- [tests/test_transcriber.py:184-237](tests/test_transcriber.py:184-237) —
+  new tests `test_translate_target_skips_english_for_non_openai_stt` and
+  `test_translate_target_to_english_with_non_openai_stt`.
+
+---
+
 ## 2026-05-11 — Session: Stale marker + transcript server warning (proper fix)
 
 ### What was done
