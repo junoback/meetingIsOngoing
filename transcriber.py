@@ -420,17 +420,23 @@ class Transcriber:
                         texts['en'] = source_text
                         english_text = source_text
                     elif self.stt_supports_translation:
-                        # OpenAI Whisper 原生 audio.translations 端點
+                        # OpenAI Whisper 原生 audio.translations 端點 ── 一次 STT call 就出英文，
+                        # 等於免費副產品，順便存進 texts['en'] 給 bilingual 顯示用，也餵給後面
+                        # target translation 當參考。
                         audio_file.seek(0)
                         english_text = self._translate_audio_to_english(audio_file)
                         texts['en'] = english_text
                         whisper_calls += 1
-                    else:
-                        # Groq 等不支援 translations — 用 LLM 翻譯英文中繼
+                    elif self.target_language == "en":
+                        # STT 不支援 translations，但 target 就是英文 → 必須做這次 LLM 翻譯
                         english_text = self.translate_to_target_language(
                             source_text, source_language, "en"
                         )
                         texts['en'] = english_text
+                    # else: STT 不支援 translations 且 target 不是英文 → 跳過英文中繼，
+                    # 直接 source → target 一次 LLM call。每個 chunk 省下 1 次 LLM 呼叫，
+                    # 1-2 hr 會議累積延遲明顯減少（trade-off：bilingual UI 不會有 EN 行；
+                    # target 翻譯不再以 EN 當參考，但對現代 LLM 影響很小）。
 
                     if self.target_language == source_language:
                         target_text = source_text

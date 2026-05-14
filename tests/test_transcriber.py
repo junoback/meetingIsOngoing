@@ -180,6 +180,61 @@ class TestTranscribeAudio:
         assert result["texts"]["en"] == "Test audio"
         assert result["texts"]["zh"] == "測試音訊"
 
+    @patch.object(Transcriber, 'translate_to_target_language', return_value="測試音訊")
+    @patch.object(Transcriber, '_transcribe_source_text', return_value="テスト音声")
+    def test_translate_target_skips_english_for_non_openai_stt(
+        self, mock_transcribe, mock_translate
+    ):
+        """
+        當 STT 不支援 audio.translations（如 Groq）且 target 不是英文時，
+        應該跳過英文中繼的 LLM call ── 整個 chunk 只做 1 次 translate call，
+        而不是 2 次。減少 1-2 hr 會議的累積延遲。
+        """
+        t = Transcriber("fake-key", stt_provider="groq_whisper")
+        t.set_mode("translate_target")
+        t.set_language("ja")
+        t.set_target_language("zh")
+
+        result = t.transcribe_audio(self._make_audio_file(), 5.0)
+
+        assert result["success"] is True
+        assert result["text"] == "測試音訊"
+        assert result["texts"]["ja"] == "テスト音声"
+        assert result["texts"]["zh"] == "測試音訊"
+        # 關鍵驗證：英文中繼被跳過、只有 1 次 LLM translate call
+        assert "en" not in result["texts"]
+        assert mock_translate.call_count == 1
+        # 而且呼叫時 english_text 參數是空字串（沒有英文參考）
+        _args, kwargs = mock_translate.call_args
+        # translate_to_target_language(source_text, source_lang, target_lang, english_text="")
+        # english_text 是第 4 個位置參數，預設 ""
+        if len(_args) >= 4:
+            assert _args[3] == ""
+        else:
+            assert kwargs.get("english_text", "") == ""
+
+    @patch.object(Transcriber, 'translate_to_target_language', return_value="Test audio")
+    @patch.object(Transcriber, '_transcribe_source_text', return_value="テスト音声")
+    def test_translate_target_to_english_with_non_openai_stt(
+        self, mock_transcribe, mock_translate
+    ):
+        """
+        Edge case：STT 不支援 translations 且 target 就是英文 → 必須做 LLM 翻譯。
+        確認沒被新的 fix 誤殺。
+        """
+        t = Transcriber("fake-key", stt_provider="groq_whisper")
+        t.set_mode("translate_target")
+        t.set_language("ja")
+        t.set_target_language("en")
+
+        result = t.transcribe_audio(self._make_audio_file(), 5.0)
+
+        assert result["success"] is True
+        assert result["text"] == "Test audio"
+        assert result["texts"]["ja"] == "テスト音声"
+        assert result["texts"]["en"] == "Test audio"
+        assert mock_translate.call_count == 1
+
     @patch.object(Transcriber, '_transcribe_source_text', return_value="")
     def test_empty_text_returns_none(self, mock_transcribe):
         """空白結果應回傳 None"""
