@@ -102,6 +102,30 @@
 ### P3-04: Auto-save settings on change
 - **Status**: `[x]` Done (2026-03-23)
 
+### P3-05: SRT/VTT relative timestamps for video subtitle overlay
+- **Status**: `[ ]` planned (2026-05-16)
+- **Why**: User want to overlay generated translation as subtitle on a YouTube
+  recording. Records audio via BlackHole while watching YT, then plays the
+  recorded audio (or original video) with the generated `.srt` loaded in VLC
+  or YT to see Chinese subtitles. Current SRT export emits absolute clock
+  time (e.g. `14:30:05,000 --> 14:30:10,000`) via `_timestamp_to_seconds()`
+  at `app.py:80-92`, which makes the SRT unusable for video overlay (player
+  interprets it as "starts 14.5 hours into the video").
+- **Plan**:
+  1. Modify `save_transcript_to_srt` / `save_transcript_to_vtt` (app.py:577-628)
+     to compute times relative to recording start (= first chunk timestamp,
+     or read `started_at` from `_write_active_session_marker` if available).
+  2. Either add a second time-mode option ("Absolute clock" vs "Relative to
+     recording start") OR just switch to relative — absolute is rarely useful
+     for SRT/VTT (those formats assume relative time by spec).
+  3. Optional UI: add a "Subtitle time offset (seconds, +/-)" field so user
+     can nudge timing if YT-play and Record-start were not pressed exactly
+     together. Could even support negative offset (trim leading silence).
+  4. Consider merging adjacent short VAD chunks (< 1.5s gap) into one
+     subtitle line to reduce subtitle flicker on playback. Optional polish.
+- **Effort**: Small (the data — chunk timestamp + duration — already exists)
+- **Risk**: Low
+
 ---
 
 ## Priority 5 — Long Session Stability (Sprint 5)

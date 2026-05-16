@@ -50,13 +50,19 @@ Translation lag fix — pushed to GitHub:
   non-thinking mode** (newest cheap model). No off-peak discount currently.
 
 ### Pickup point for next session
-User wants to test **OpenAI (Whisper + GPT-4o-mini)** as a speed baseline
-comparison. Manual sidebar switch only, no code change needed. Look at
-`transcripts/<meeting>.txt` per-line `(延遲：X.XX秒)` values to compare:
-- If OpenAI is dramatically faster than Groq + DeepSeek even after `11716b1`
-  fix → bottleneck is on DeepSeek's side, not code.
-- If both feel similar → fix is doing its job; remaining lag is API + queue
-  baseline.
+Two queued items (user requested order: do P3-05 next):
+
+**1. P3-05 SRT relative timestamps (NEW — primary)**:
+User wants to record YouTube lectures via BlackHole, get translation, then
+overlay `.srt` on the video for re-watching. Existing SRT export
+(`app.py:577-628`) emits absolute clock time, breaking video subtitle use
+case. Fix: compute time relative to recording start. Full plan in
+`BACKLOG.md` → P3-05. Small scope, ~1 hour of work.
+
+**2. OpenAI speed comparison (queued from 2026-05-14, deferred)**:
+Test OpenAI (Whisper + GPT-4o-mini) as a speed baseline vs Groq + DeepSeek
+after `11716b1` fix. Manual sidebar switch only, no code change needed. Look
+at `transcripts/<meeting>.txt` per-line `(延遲：X.XX秒)` values to compare.
 
 ### Prior (2026-05-11)
 Two bug fixes for Streamlit rerun model: `6e48ceb` (stale marker auto-Viewer
